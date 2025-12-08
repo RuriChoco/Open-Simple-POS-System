@@ -16,6 +16,8 @@
     <header>
         <h1>Admin Dashboard</h1>
         <nav class="admin-nav">
+            <a href="/manage-products">Manage Products</a>
+            <a href="/manage-users">Manage Users</a>
             <a href="/">Go to POS</a>
             <div class="user-menu">
                 <span id="welcome-user"></span>
@@ -65,22 +67,6 @@
             <!-- Sidebar -->
             <div class="admin-sidebar">
                 <div class="card">
-                    <h2>Add New Product</h2>
-                    <form id="add-product-form">
-                        <input type="text" id="product-name" placeholder="Product Name" required>
-                        <input type="number" id="product-price" placeholder="Price" step="0.01" required>
-                        <input type="text" id="product-barcode" placeholder="Barcode (optional)">
-                        <button type="submit">Add Product</button>
-                    </form>
-                </div>
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Manage Products</h2>
-                        <input type="search" id="product-mgmt-search" placeholder="Search products...">
-                    </div>
-                    <div id="product-management-list"></div>
-                </div>
-                <div class="card">
                     <h2>Top-Selling Products</h2>
                     <div id="top-selling-report">
                         <p>Loading report...</p>
@@ -91,14 +77,6 @@
                     <div id="cashier-performance-report">
                         <p>Loading report...</p>
                     </div>
-                </div>
-                <div class="card">
-                    <h2>Create Cashier Account</h2>
-                    <form id="create-cashier-form">
-                        <input type="text" id="cashier-username" placeholder="Cashier Username" required>
-                        <input type="password" id="cashier-password" placeholder="Password" required>
-                        <button type="submit">Create Cashier</button>
-                    </form>
                 </div>
             </div>
         </div>

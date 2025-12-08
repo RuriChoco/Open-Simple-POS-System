@@ -15,7 +15,16 @@ const saltRounds = 10;
 const dbAsync = {
     get: util.promisify(db.get.bind(db)),
     all: util.promisify(db.all.bind(db)),
-    run: util.promisify(db.run.bind(db)),
+    // util.promisify doesn't handle the `this` context for `lastID` or `changes`.
+    // We need a custom wrapper for db.run.
+    run: (sql, params = []) => {
+        return new Promise((resolve, reject) => {
+            db.run(sql, params, function (err) {
+                if (err) reject(err);
+                else resolve(this); // Resolve with the `this` context
+            });
+        });
+    }
 };
 // Middleware
 app.use(express.json()); // To parse JSON bodies
@@ -53,8 +62,7 @@ app.post('/api/products', isAuthenticated, isAdmin, async (req, res, next) => {
         const { name, price, barcode } = req.body;
         const sql = 'INSERT INTO products (name, price, barcode) VALUES (?,?,?)';
         // We need the 'this' context from db.run, so we can't use the promisified version directly here without some adjustments.
-        // Or we can re-query, but for simplicity, let's keep this one as is for now or use a specific promise wrapper.
-        db.run(sql, [name, price, barcode], function(err) {
+        db.run(sql, [name, price, barcode], function (err) {
             if (err) return next(err);
             res.json({ "message": "success", "data": { id: this.lastID, name, price, barcode } });
         });
@@ -68,6 +76,9 @@ app.delete('/api/products/:id', isAuthenticated, isAdmin, async (req, res, next)
     try {
         const { id } = req.params;
         const result = await dbAsync.run('DELETE FROM products WHERE id = ?', id);
+        if (result.changes === 0) {
+            return res.status(404).json({ error: "Product not found." });
+        }
         res.json({ message: "deleted", changes: result.changes });
     } catch (err) {
         next(err);
@@ -112,7 +123,7 @@ app.post('/api/sales', isAuthenticated, async (req, res, next) => {
 
         // Can't use promisified run if we need `this.lastID`
         const saleResult = await new Promise((resolve, reject) => {
-            db.run('INSERT INTO sales (user_id, total_amount) VALUES (?, ?)', [userId, total_amount], function(err) {
+            db.run('INSERT INTO sales (user_id, total_amount) VALUES (?, ?)', [userId, total_amount], function (err) {
                 if (err) reject(err);
                 else resolve(this);
             });
@@ -371,17 +382,18 @@ app.post('/api/users/register-admin', async (req, res, next) => {
     }
 });
 
-// Create a cashier account (admin only)
-app.post('/api/users/create-cashier', isAuthenticated, isAdmin, async (req, res, next) => {
+// Create a new user (admin only)
+app.post('/api/users', isAuthenticated, isAdmin, async (req, res, next) => {
     try {
-        const { username, password } = req.body;
-        if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
+        const { username, password, role } = req.body;
+        if (!username || !password || !role) return res.status(400).json({ error: "Username, password, and role are required." });
+        if (!['admin', 'cashier'].includes(role)) return res.status(400).json({ error: "Invalid role specified." });
 
         const hashedPassword = await bcrypt.hash(password, saltRounds);
-        await dbAsync.run('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, hashedPassword, 'cashier']);
-        res.status(201).json({ message: "Cashier account created successfully." });
+        await dbAsync.run('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, hashedPassword, role]);
+        res.status(201).json({ message: `User '${username}' created successfully as a ${role}.` });
     } catch (err) {
-        next(err);
+        next(err); // The centralized error handler will catch UNIQUE constraint errors
     }
 });
 
@@ -417,6 +429,50 @@ app.get('/api/users/session', (req, res) => {
         res.json({ user: req.session.user });
     } else {
         res.status(401).json({ error: "Not authenticated" });
+    }
+});
+
+// GET all users (for admin management)
+app.get('/api/users', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        // Exclude passwords from the result
+        const users = await dbAsync.all("SELECT id, username, role FROM users ORDER BY username");
+        res.json({ message: "success", data: users });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// UPDATE a user's role (admin only)
+app.put('/api/users/:id/role', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const userIdToUpdate = parseInt(req.params.id, 10);
+        const currentUserId = req.session.user.id;
+        const { newRole } = req.body;
+
+        if (!['admin', 'cashier'].includes(newRole)) {
+            return res.status(400).json({ error: "Invalid role specified." });
+        }
+
+        if (userIdToUpdate === currentUserId) {
+            return res.status(403).json({ error: "You cannot change your own role." });
+        }
+
+        const userToUpdate = await dbAsync.get('SELECT role FROM users WHERE id = ?', [userIdToUpdate]);
+        if (userToUpdate && userToUpdate.role === 'admin' && newRole === 'cashier') {
+            const adminCountResult = await dbAsync.get("SELECT COUNT(*) as count FROM users WHERE role = 'admin'");
+            if (adminCountResult.count <= 1) {
+                return res.status(403).json({ error: "Cannot demote the last admin account." });
+            }
+        }
+
+        const result = await dbAsync.run('UPDATE users SET role = ? WHERE id = ?', [newRole, userIdToUpdate]);
+        if (result.changes === 0) {
+            return res.status(404).json({ error: "User not found." });
+        }
+        res.json({ message: "User role updated successfully." });
+    } catch (err) {
+        next(err);
     }
 });
 
@@ -471,6 +527,16 @@ app.get('/', isAuthenticated, (req, res) => {
 app.get('/admin', isAuthenticated, isAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
+
+// Management Pages
+app.get('/manage-products', isAuthenticated, isAdmin, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'manage-products.html'));
+});
+
+app.get('/manage-users', isAuthenticated, isAdmin, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'manage-users.html'));
+});
+
 
 // Receipt page
 app.get('/receipt/:id', isAuthenticated, (req, res) => {
