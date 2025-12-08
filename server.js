@@ -6,6 +6,8 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
 const SQLiteStore = require('connect-sqlite3')(session);
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const WebSocket = require('ws');
 
 const app = express();
@@ -59,19 +61,57 @@ async function logAdminAction(userId, actionType, details = '') {
     }
     broadcast({ type: 'LOGS_UPDATED' });
 }
+
+// --- Security Middleware ---
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+            "script-src": ["'self'", "https://cdn.jsdelivr.net"],
+            // Allow fonts from Google for potential future use
+            "font-src": ["'self'", "https://fonts.gstatic.com"],
+        }
+    }
+})); // Set security-related HTTP headers
+
+// Rate limiter for authentication routes
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // Limit each IP to 10 requests per windowMs
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many login attempts from this IP, please try again after 15 minutes' }
+});
+
 // Middleware
 app.use(express.json()); // To parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // To parse URL-encoded bodies
+
+// Session secret management
+let sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+    console.warn('-----------------------------------------------------------------');
+    console.warn('WARNING: SESSION_SECRET environment variable is not set.');
+    console.warn('Using a default, insecure secret for development purposes only.');
+    console.warn('For production, please set a strong, random secret.');
+    console.warn('-----------------------------------------------------------------');
+    sessionSecret = 'a-default-insecure-secret-for-dev-only';
+}
 
 app.use(session({
     store: new SQLiteStore({
         db: 'sessions.db',
         dir: './'
     }),
-    secret: process.env.SESSION_SECRET || 'a-very-secret-key-that-should-be-in-env-vars', // In production, use an environment variable
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 24 * 60 * 60 * 1000 } // 24 hours
+    cookie: { 
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        httpOnly: true, // Prevents client-side JS from accessing the cookie
+        secure: process.env.NODE_ENV === 'production', // Only send cookie over HTTPS in production
+        sameSite: 'strict' // Mitigates CSRF attacks
+    }
 }));
 
 app.use(express.static(path.join(__dirname, 'public'))); // Serve static files from 'public'
@@ -510,6 +550,9 @@ app.post('/api/users', isAuthenticated, isAdmin, async (req, res, next) => {
         const { username, password, role } = req.body;
         if (!username || !password || !role) return res.status(400).json({ error: "Username, password, and role are required." });
         if (!['admin', 'cashier'].includes(role)) return res.status(400).json({ error: "Invalid role specified." });
+        if (password.length < 8) {
+            return res.status(400).json({ error: "Password must be at least 8 characters long." });
+        }
 
         const hashedPassword = await bcrypt.hash(password, saltRounds);
         await dbAsync.run('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, hashedPassword, role]);
@@ -522,7 +565,7 @@ app.post('/api/users', isAuthenticated, isAdmin, async (req, res, next) => {
 });
 
 // Login
-app.post('/api/users/login', async (req, res, next) => {
+app.post('/api/users/login', authLimiter, async (req, res, next) => {
     try {
         const { username, password } = req.body;
         const user = await dbAsync.get('SELECT * FROM users WHERE username = ?', [username]);

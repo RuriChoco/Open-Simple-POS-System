@@ -13,11 +13,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const resetFilterBtn = document.getElementById('reset-filter-btn');
     const exportCsvBtn = document.getElementById('export-csv-btn');
     const welcomeUser = document.getElementById('welcome-user');
+    const statusIndicator = document.getElementById('status-indicator');
+    const statusText = document.getElementById('status-text');
     let salesChartInstance = null; // To hold the chart instance
 
     // --- WebSocket Setup ---
     function connectWebSocket() {
         const ws = new WebSocket(`ws://${window.location.host}`);
+
+        ws.onopen = () => {
+            console.log('WebSocket connected');
+            statusIndicator.classList.remove('disconnected');
+            statusIndicator.classList.add('connected');
+            statusText.textContent = 'Live';
+            // On successful connection, fetch latest data
+            fetchDailySalesReport();
+            fetchSalesHistory();
+        };
 
         ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
@@ -37,7 +49,17 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         ws.onclose = () => {
+            console.log('WebSocket disconnected. Attempting to reconnect...');
+            statusIndicator.classList.remove('connected');
+            statusIndicator.classList.add('disconnected');
+            statusText.textContent = 'Offline';
             setTimeout(connectWebSocket, 5000);
+        };
+
+        ws.onerror = () => {
+            statusIndicator.classList.remove('connected');
+            statusIndicator.classList.add('disconnected');
+            statusText.textContent = 'Error';
         };
     }
 
@@ -92,23 +114,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
         sales.forEach(sale => {
             const saleDate = new Date(sale.sale_date).toLocaleString();
-            const itemsHtml = sale.items.map(item => `<li>${item.quantity}x ${item.product_name}</li>`).join('');
             const saleElement = document.createElement('details');
             saleElement.className = 'sale-history-item';
-            saleElement.innerHTML = `
-                <summary>
-                    <div class="summary-main">
-                        <span>Sale #${sale.sale_id} - <strong>₱${sale.total_amount.toFixed(2)}</strong></span>
-                        <span class="cashier-name">Cashier: ${sale.cashier_name || 'N/A'}</span>
-                        <time>${saleDate}</time>
-                    </div>
-                    <div class="sale-actions">
-                        <button class="reprint-btn" data-id="${sale.sale_id}" title="Reprint Receipt">Reprint</button>
-                        <button class="void-btn" data-id="${sale.sale_id}" title="Void Sale">Void</button>
-                    </div>
-                </summary>
-                <ul class="sale-items-list">${itemsHtml}</ul>
-            `;
+
+            const summary = document.createElement('summary');
+            summary.innerHTML = `<div class="summary-main"><span>Sale #${sale.sale_id} - <strong>₱${sale.total_amount.toFixed(2)}</strong></span><span class="cashier-name"></span><time>${saleDate}</time></div><div class="sale-actions"><button class="reprint-btn" data-id="${sale.sale_id}" title="Reprint Receipt">Reprint</button><button class="void-btn" data-id="${sale.sale_id}" title="Void Sale">Void</button></div>`;
+            summary.querySelector('.cashier-name').textContent = `Cashier: ${sale.cashier_name || 'N/A'}`;
+
+            const itemsList = document.createElement('ul');
+            itemsList.className = 'sale-items-list';
+            if (sale.items && sale.items.length > 0) {
+                sale.items.forEach(item => {
+                    const li = document.createElement('li');
+                    li.textContent = `${item.quantity}x ${item.product_name}`;
+                    itemsList.appendChild(li);
+                });
+            } else {
+                const li = document.createElement('li');
+                li.textContent = 'No items found for this sale.';
+                itemsList.appendChild(li);
+            }
+
+            saleElement.append(summary, itemsList);
             salesHistoryList.appendChild(saleElement);
         });
 
@@ -292,7 +319,10 @@ document.addEventListener('DOMContentLoaded', () => {
         list.className = 'top-selling-list';
         products.forEach(product => {
             const item = document.createElement('li');
-            item.innerHTML = `<span>${product.name}</span><strong>${product.total_sold} sold</strong>`;
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = product.name;
+            item.innerHTML = `<strong>${product.total_sold} sold</strong>`;
+            item.prepend(nameSpan);
             list.appendChild(item);
         });
         topSellingContainer.innerHTML = '';
@@ -326,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr><th>Cashier</th><th>Sales</th><th>Revenue</th></tr>
             </thead>
             <tbody>
-                ${data.map(row => `<tr><td>${row.username}</td><td>${row.number_of_sales}</td><td>₱${row.total_revenue.toFixed(2)}</td></tr>`).join('')}
+                ${data.map(row => `<tr><td>${escapeHtml(row.username)}</td><td>${row.number_of_sales}</td><td>₱${row.total_revenue.toFixed(2)}</td></tr>`).join('')}
             </tbody>`;
         cashierPerformanceContainer.innerHTML = '';
         cashierPerformanceContainer.appendChild(table);
@@ -352,10 +382,11 @@ document.addEventListener('DOMContentLoaded', () => {
         list.className = 'low-stock-list';
         products.forEach(product => {
             const item = document.createElement('li');
-            item.innerHTML = `
-                <a href="/manage-products">${product.name}</a>
-                <span class="stock-level">${product.quantity} left</span>
-            `;
+            const link = document.createElement('a');
+            link.href = '/manage-products';
+            link.textContent = product.name;
+            item.innerHTML = `<span class="stock-level">${product.quantity} left</span>`;
+            item.prepend(link);
             list.appendChild(item);
         });
         lowStockContainer.innerHTML = '';
@@ -376,6 +407,16 @@ document.addEventListener('DOMContentLoaded', () => {
         link.setAttribute('href', url);
         link.setAttribute('download', `daily-sales-report-${new Date().toISOString().split('T')[0]}.csv`);
         link.click();
+    }
+
+    // Helper to prevent HTML injection
+    function escapeHtml(unsafe) {
+        return unsafe
+             .replace(/&/g, "&amp;")
+             .replace(/</g, "&lt;")
+             .replace(/>/g, "&gt;")
+             .replace(/"/g, "&quot;")
+             .replace(/'/g, "&#039;");
     }
 
     // --- User Management ---
@@ -399,19 +440,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const userEl = document.createElement('div');
             userEl.className = 'user-mgmt-item';
             const isCurrentUser = user.username === welcomeUser.textContent;
-            userEl.innerHTML = `
-                <div>
-                    <strong>${user.username}</strong>
-                </div>
-                <div class="user-mgmt-actions">
-                    <select class="role-select" data-id="${user.id}" ${isCurrentUser ? 'disabled title="Cannot change your own role"' : ''}>
-                        <option value="cashier" ${user.role === 'cashier' ? 'selected' : ''}>Cashier</option>
-                        <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
-                    </select>
-                    <button class="change-password-btn" data-id="${user.id}" data-username="${user.username}">Change Password</button>
-                    <button class="delete-user-btn" data-id="${user.id}" ${isCurrentUser ? 'disabled title="You cannot delete yourself"' : ''}>Delete</button>
-                </div>
-            `;
+            
+            const userInfo = document.createElement('div');
+            const usernameStrong = document.createElement('strong');
+            usernameStrong.textContent = user.username;
+            userInfo.appendChild(usernameStrong);
+
+            const userActions = document.createElement('div');
+            userActions.className = 'user-mgmt-actions';
+            userActions.innerHTML = `<select class="role-select" data-id="${user.id}" ${isCurrentUser ? 'disabled title="Cannot change your own role"' : ''}><option value="cashier" ${user.role === 'cashier' ? 'selected' : ''}>Cashier</option><option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option></select><button class="change-password-btn" data-id="${user.id}" data-username="${user.username}">Change Password</button><button class="delete-user-btn" data-id="${user.id}" ${isCurrentUser ? 'disabled title="You cannot delete yourself"' : ''}>Delete</button>`;
+
+            userEl.append(userInfo, userActions);
             userManagementList.appendChild(userEl);
         });
 

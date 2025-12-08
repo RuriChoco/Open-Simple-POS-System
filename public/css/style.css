@@ -441,6 +441,27 @@ button:focus-visible {
     justify-content: center;
 }
 
+.connection-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--secondary-color);
+}
+
+.status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #f0ad4e; /* Yellow for connecting */
+    transition: background-color 0.5s;
+}
+
+.status-indicator.connected { background-color: var(--success-color); }
+.status-indicator.disconnected { background-color: var(--danger-color); }
+
+
 /* UI Mode Switcher Styles */
 .ui-mode-switcher {
     display: flex;

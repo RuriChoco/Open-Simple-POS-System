@@ -5,12 +5,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const productMgmtSearch = document.getElementById('product-mgmt-search');
     const logoutBtn = document.getElementById('logout-btn');
     const welcomeUser = document.getElementById('welcome-user');
+    const statusIndicator = document.getElementById('status-indicator');
+    const statusText = document.getElementById('status-text');
 
     let allProducts = [];
 
     // --- WebSocket Setup ---
     function connectWebSocket() {
         const ws = new WebSocket(`ws://${window.location.host}`);
+
+        ws.onopen = () => {
+            console.log('WebSocket connected');
+            statusIndicator.classList.remove('disconnected');
+            statusIndicator.classList.add('connected');
+            statusText.textContent = 'Live';
+            fetchProductsForManagement(); // Fetch latest on connect
+        };
 
         ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
@@ -21,7 +31,17 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         ws.onclose = () => {
+            console.log('WebSocket disconnected. Attempting to reconnect...');
+            statusIndicator.classList.remove('connected');
+            statusIndicator.classList.add('disconnected');
+            statusText.textContent = 'Offline';
             setTimeout(connectWebSocket, 5000);
+        };
+
+        ws.onerror = () => {
+            statusIndicator.classList.remove('connected');
+            statusIndicator.classList.add('disconnected');
+            statusText.textContent = 'Error';
         };
     }
 
@@ -70,18 +90,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const itemEl = document.createElement('div');
             itemEl.className = 'product-mgmt-item';
             itemEl.tabIndex = 0;
-            itemEl.innerHTML = `
-                <div>
-                    <strong>${product.name}</strong>
-                    <p>₱${product.price.toFixed(2)}</p>
-                    <p class="product-stock">Stock: ${product.quantity}</p>
-                </div>
-                <div class="product-mgmt-actions">
-                    <button class="edit-btn action-btn" data-id="${product.id}">Edit</button>
-                    <button class="adjust-stock-btn action-btn" data-id="${product.id}" data-name="${product.name}" data-quantity="${product.quantity}">Adjust Stock</button>
-                    <button class="delete-btn action-btn" data-id="${product.id}">Delete</button>
-                </div>
-            `;
+
+            const productInfo = document.createElement('div');
+            const nameStrong = document.createElement('strong');
+            nameStrong.textContent = product.name;
+            const priceP = document.createElement('p');
+            priceP.textContent = `₱${product.price.toFixed(2)}`;
+            const stockP = document.createElement('p');
+            stockP.className = 'product-stock';
+            stockP.textContent = `Stock: ${product.quantity}`;
+            productInfo.append(nameStrong, priceP, stockP);
+
+            const productActions = document.createElement('div');
+            productActions.className = 'product-mgmt-actions';
+            productActions.innerHTML = `<button class="edit-btn action-btn" data-id="${product.id}">Edit</button><button class="adjust-stock-btn action-btn" data-id="${product.id}" data-name="${product.name}" data-quantity="${product.quantity}">Adjust Stock</button><button class="delete-btn action-btn" data-id="${product.id}">Delete</button>`;
+
+            itemEl.append(productInfo, productActions);
             productManagementList.appendChild(itemEl);
         });
     }

@@ -5,10 +5,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const logContainer = document.getElementById('log-container');
     const logSearchInput = document.getElementById('log-search');
     const exportCsvBtn = document.getElementById('export-csv-btn');
+    const statusIndicator = document.getElementById('status-indicator');
+    const statusText = document.getElementById('status-text');
 
     // --- WebSocket Setup ---
     function connectWebSocket() {
         const ws = new WebSocket(`ws://${window.location.host}`);
+
+        ws.onopen = () => {
+            console.log('WebSocket connected');
+            statusIndicator.classList.remove('disconnected');
+            statusIndicator.classList.add('connected');
+            statusText.textContent = 'Live';
+            fetchAdminLogs(); // Fetch latest on connect
+        };
 
         ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
@@ -19,7 +29,17 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         ws.onclose = () => {
+            console.log('WebSocket disconnected. Attempting to reconnect...');
+            statusIndicator.classList.remove('connected');
+            statusIndicator.classList.add('disconnected');
+            statusText.textContent = 'Offline';
             setTimeout(connectWebSocket, 5000);
+        };
+
+        ws.onerror = () => {
+            statusIndicator.classList.remove('connected');
+            statusIndicator.classList.add('disconnected');
+            statusText.textContent = 'Error';
         };
     }
 
@@ -86,14 +106,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 </tr>
             </thead>
             <tbody>
-                ${logs.map(log => `
-                    <tr>
-                        <td>${new Date(log.timestamp).toLocaleString()}</td>
-                        <td>${log.username}</td>
-                        <td><span class="log-action-type">${log.action_type.replace(/_/g, ' ')}</span></td>
-                        <td>${log.details}</td>
-                    </tr>
-                `).join('')}
+                ${logs.map(log => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td>${new Date(log.timestamp).toLocaleString()}</td><td></td><td><span class="log-action-type"></span></td><td></td>`;
+                    row.cells[1].textContent = log.username;
+                    row.cells[2].querySelector('.log-action-type').textContent = log.action_type.replace(/_/g, ' ');
+                    row.cells[3].textContent = log.details;
+                    return row.outerHTML;
+                }).join('')}
             </tbody>
         `;
         logContainer.innerHTML = '';

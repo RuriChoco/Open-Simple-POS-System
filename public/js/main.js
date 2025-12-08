@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const keyboardModeBtn = document.getElementById('keyboard-mode-btn');
     const touchModeBtn = document.getElementById('touch-mode-btn');
     const printContainer = document.getElementById('receipt-container-print');
+    const statusIndicator = document.getElementById('status-indicator');
+    const statusText = document.getElementById('status-text');
 
     let cart = [];
     let allProducts = []; // Cache all products to avoid re-fetching
@@ -18,6 +20,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- WebSocket Setup ---
     function connectWebSocket() {
         const ws = new WebSocket(`ws://${window.location.host}`);
+
+        ws.onopen = () => {
+            console.log('WebSocket connected');
+            statusIndicator.classList.remove('disconnected');
+            statusIndicator.classList.add('connected');
+            statusText.textContent = 'Live';
+        };
 
         ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
@@ -28,8 +37,17 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         ws.onclose = () => {
-            console.log('WebSocket disconnected. Attempting to reconnect in 5 seconds...');
+            console.log('WebSocket disconnected. Attempting to reconnect...');
+            statusIndicator.classList.remove('connected');
+            statusIndicator.classList.add('disconnected');
+            statusText.textContent = 'Offline';
             setTimeout(connectWebSocket, 5000);
+        };
+
+        ws.onerror = () => {
+            statusIndicator.classList.remove('connected');
+            statusIndicator.classList.add('disconnected');
+            statusText.textContent = 'Error';
         };
     }
 
@@ -94,11 +112,20 @@ document.addEventListener('DOMContentLoaded', () => {
             productEl.className = `product-item ${product.quantity <= 0 ? 'out-of-stock' : ''}`;
             productEl.tabIndex = 0; // Make it focusable
             productEl.dataset.productId = product.id; // Store product ID for delegation
-            productEl.innerHTML = `
-                <div class="product-name">${product.name}</div>
-                <div class="product-price">₱${product.price.toFixed(2)}</div>
-                <div class="product-stock">Stock: ${product.quantity}</div>
-            `;
+            
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'product-name';
+            nameDiv.textContent = product.name;
+
+            const priceDiv = document.createElement('div');
+            priceDiv.className = 'product-price';
+            priceDiv.textContent = `₱${product.price.toFixed(2)}`;
+
+            const stockDiv = document.createElement('div');
+            stockDiv.className = 'product-stock';
+            stockDiv.textContent = `Stock: ${product.quantity}`;
+
+            productEl.append(nameDiv, priceDiv, stockDiv);
             fragment.appendChild(productEl);
         });
         productList.appendChild(fragment);
@@ -159,19 +186,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 const li = document.createElement('li');
                 li.className = 'cart-item';
                 li.tabIndex = -1; // Make it focusable programmatically
-                li.innerHTML = `
-                    <div class="item-details">
-                        <span class="item-name">${item.name}</span>
-                        <span class="item-price-single">₱${item.price.toFixed(2)} each</span>
-                    </div>
-                    <div class="item-controls">
-                        <button class="quantity-btn" data-id="${item.id}" data-change="-1">−</button>
-                        <span class="item-quantity">${item.quantity}</span>
-                        <button class="quantity-btn" data-id="${item.id}" data-change="1">+</button>
-                        <span class="item-total-price">₱${(item.price * item.quantity).toFixed(2)}</span>
-                        <button class="remove-item-btn" data-id="${item.id}">×</button>
-                    </div>
-                `;
+
+                const itemDetails = document.createElement('div');
+                itemDetails.className = 'item-details';
+                const itemName = document.createElement('span');
+                itemName.className = 'item-name';
+                itemName.textContent = item.name;
+                const itemPriceSingle = document.createElement('span');
+                itemPriceSingle.className = 'item-price-single';
+                itemPriceSingle.textContent = `₱${item.price.toFixed(2)} each`;
+                itemDetails.append(itemName, itemPriceSingle);
+
+                const itemControls = document.createElement('div');
+                itemControls.className = 'item-controls';
+                itemControls.innerHTML = `<button class="quantity-btn" data-id="${item.id}" data-change="-1">−</button><span class="item-quantity">${item.quantity}</span><button class="quantity-btn" data-id="${item.id}" data-change="1">+</button><span class="item-total-price">₱${(item.price * item.quantity).toFixed(2)}</span><button class="remove-item-btn" data-id="${item.id}">×</button>`;
+
+                li.append(itemDetails, itemControls);
                 fragment.appendChild(li);
                 total += item.price * item.quantity;
             });

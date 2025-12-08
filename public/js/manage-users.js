@@ -4,10 +4,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const welcomeUser = document.getElementById('welcome-user');
     const userManagementList = document.getElementById('user-management-list');
     const addUserBtn = document.getElementById('add-user-btn');
+    const statusIndicator = document.getElementById('status-indicator');
+    const statusText = document.getElementById('status-text');
 
     // --- WebSocket Setup ---
     function connectWebSocket() {
         const ws = new WebSocket(`ws://${window.location.host}`);
+
+        ws.onopen = () => {
+            console.log('WebSocket connected');
+            statusIndicator.classList.remove('disconnected');
+            statusIndicator.classList.add('connected');
+            statusText.textContent = 'Live';
+            fetchUsersForManagement(); // Fetch latest on connect
+        };
 
         ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
@@ -18,7 +28,17 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         ws.onclose = () => {
+            console.log('WebSocket disconnected. Attempting to reconnect...');
+            statusIndicator.classList.remove('connected');
+            statusIndicator.classList.add('disconnected');
+            statusText.textContent = 'Offline';
             setTimeout(connectWebSocket, 5000);
+        };
+
+        ws.onerror = () => {
+            statusIndicator.classList.remove('connected');
+            statusIndicator.classList.add('disconnected');
+            statusText.textContent = 'Error';
         };
     }
 
@@ -67,19 +87,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const userEl = document.createElement('div');
             userEl.className = 'user-mgmt-item';
             const isCurrentUser = user.username === welcomeUser.textContent;
-            userEl.innerHTML = `
-                <div>
-                    <strong>${user.username}</strong>
-                </div>
-                <div class="user-mgmt-actions">
-                    <select class="role-select" data-id="${user.id}" ${isCurrentUser ? 'disabled title="Cannot change your own role"' : ''}>
-                        <option value="cashier" ${user.role === 'cashier' ? 'selected' : ''}>Cashier</option>
-                        <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
-                    </select>
-                    <button class="change-password-btn action-btn" data-id="${user.id}" data-username="${user.username}">Change Password</button>
-                    <button class="delete-user-btn action-btn" data-id="${user.id}" ${isCurrentUser ? 'disabled title="You cannot delete yourself"' : ''}>Delete</button>
-                </div>
-            `;
+
+            const userInfo = document.createElement('div');
+            const usernameStrong = document.createElement('strong');
+            usernameStrong.textContent = user.username;
+            userInfo.appendChild(usernameStrong);
+
+            const userActions = document.createElement('div');
+            userActions.className = 'user-mgmt-actions';
+            userActions.innerHTML = `<select class="role-select" data-id="${user.id}" ${isCurrentUser ? 'disabled title="Cannot change your own role"' : ''}><option value="cashier" ${user.role === 'cashier' ? 'selected' : ''}>Cashier</option><option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option></select><button class="change-password-btn action-btn" data-id="${user.id}" data-username="${user.username}">Change Password</button><button class="delete-user-btn action-btn" data-id="${user.id}" ${isCurrentUser ? 'disabled title="You cannot delete yourself"' : ''}>Delete</button>`;
+
+            userEl.append(userInfo, userActions);
             userManagementList.appendChild(userEl);
         });
 
@@ -200,7 +218,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openChangePasswordModal(userId, username) {
         document.getElementById('change-password-userid').value = userId;
-        document.getElementById('change-password-username').textContent = username;
+        const usernameSpan = document.getElementById('change-password-username');
+        if(usernameSpan) usernameSpan.textContent = username;
         document.getElementById('change-password-form').reset();
         document.getElementById('change-password-modal').style.display = 'flex';
     }
