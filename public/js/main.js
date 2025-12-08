@@ -10,13 +10,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const welcomeUser = document.getElementById('welcome-user');
     const keyboardModeBtn = document.getElementById('keyboard-mode-btn');
     const touchModeBtn = document.getElementById('touch-mode-btn');
+    const listViewBtn = document.getElementById('list-view-btn');
     const printContainer = document.getElementById('receipt-container-print');
     const statusIndicator = document.getElementById('status-indicator');
     const statusText = document.getElementById('status-text');
+    // Payment Modal Elements
+    const paymentModal = document.getElementById('payment-modal');
+    const closeModalBtn = document.getElementById('modal-close-btn');
+    const paymentForm = document.getElementById('payment-form');
+    const paymentTotalEl = document.getElementById('payment-total');
+    const paymentMethodInput = document.getElementById('payment-method-input');
+    const cashReceivedInput = document.getElementById('cash-received');
+    const changeDueEl = document.getElementById('change-due');
+    const exactCashBtn = document.getElementById('exact-cash-btn');
+    const cashPaymentDetails = document.getElementById('cash-payment-details');
+    const confirmPaymentBtn = paymentForm.querySelector('button[type="submit"]');
 
     let cart = [];
     let allProducts = []; // Cache all products to avoid re-fetching
 
+    // --- Helper Functions ---
+    function formatPrice(number) {
+        // Formats a number with commas for thousands and ensures two decimal places.
+        return number.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+    }
     // --- WebSocket Setup ---
     function connectWebSocket() {
         const ws = new WebSocket(`ws://${window.location.host}`);
@@ -65,10 +85,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     keyboardModeBtn.addEventListener('click', () => setUIMode('keyboard-mode'));
     touchModeBtn.addEventListener('click', () => setUIMode('touch-mode'));
+    listViewBtn.addEventListener('click', () => {
+        productList.classList.toggle('list-view');
+        const isListView = productList.classList.contains('list-view');
+        listViewBtn.classList.toggle('active', isListView);
+        localStorage.setItem('posListView', isListView);
+    });
 
     // Load saved UI mode or default to keyboard
     const savedMode = localStorage.getItem('uiMode') || 'keyboard-mode';
     setUIMode(savedMode);
+
+    // Load saved list view state
+    const savedListView = localStorage.getItem('posListView') === 'true';
+    productList.classList.toggle('list-view', savedListView);
+    listViewBtn.classList.toggle('active', savedListView);
 
     // --- Auth & Session ---
     async function checkSession() {
@@ -93,46 +124,58 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/products');
             const { data } = await response.json();
             allProducts = data;
-            renderProducts(allProducts);
+            displayProducts(allProducts);
         } catch (error) {
             console.error('Failed to fetch products:', error);
             productList.innerHTML = '<p>Error loading products.</p>';
         }
     }
 
-    function renderProducts(products) {
+    function displayProducts(products) {
         const fragment = document.createDocumentFragment();
         productList.innerHTML = ''; // Clear existing products
         if (products.length === 0) {
             productList.innerHTML = '<p class="no-results">No products found.</p>';
             return;
         }
+
         products.forEach(product => {
             const productEl = document.createElement('div');
-            productEl.className = `product-item ${product.quantity <= 0 ? 'out-of-stock' : ''}`;
+            productEl.className = `product-item ${product.quantity <= 0 && product.quantity < 999 ? 'out-of-stock' : ''}`;
             productEl.tabIndex = 0; // Make it focusable
             productEl.dataset.productId = product.id; // Store product ID for delegation
-            
+
             const nameDiv = document.createElement('div');
             nameDiv.className = 'product-name';
             nameDiv.textContent = product.name;
 
+            const metaDiv = document.createElement('div');
+            metaDiv.className = 'product-meta';
+
             const priceDiv = document.createElement('div');
             priceDiv.className = 'product-price';
-            priceDiv.textContent = `₱${product.price.toFixed(2)}`;
-
+            priceDiv.textContent = `₱${formatPrice(product.price)}`;
+            
             const stockDiv = document.createElement('div');
             stockDiv.className = 'product-stock';
-            stockDiv.textContent = `Stock: ${product.quantity}`;
-
-            productEl.append(nameDiv, priceDiv, stockDiv);
+            
+            // Handle services which might have very high stock numbers
+            if (product.quantity > 999) {
+                stockDiv.textContent = 'Service';
+            } else {
+                stockDiv.textContent = `Stock: ${product.quantity}`;
+            }
+    
+            metaDiv.append(priceDiv, stockDiv);
+            
+            productEl.append(nameDiv, metaDiv);
             fragment.appendChild(productEl);
         });
         productList.appendChild(fragment);
     }
 
     function addToCart(product) {
-        if (product.quantity <= 0) {
+        if (product.quantity <= 0 && product.quantity < 999) { // Don't block services
             alert(`'${product.name}' is out of stock.`);
             return;
         }
@@ -194,12 +237,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 itemName.textContent = item.name;
                 const itemPriceSingle = document.createElement('span');
                 itemPriceSingle.className = 'item-price-single';
-                itemPriceSingle.textContent = `₱${item.price.toFixed(2)} each`;
+                itemPriceSingle.textContent = `₱${formatPrice(item.price)} each`;
                 itemDetails.append(itemName, itemPriceSingle);
 
                 const itemControls = document.createElement('div');
                 itemControls.className = 'item-controls';
-                itemControls.innerHTML = `<button class="quantity-btn" data-id="${item.id}" data-change="-1">−</button><span class="item-quantity">${item.quantity}</span><button class="quantity-btn" data-id="${item.id}" data-change="1">+</button><span class="item-total-price">₱${(item.price * item.quantity).toFixed(2)}</span><button class="remove-item-btn" data-id="${item.id}">×</button>`;
+                itemControls.innerHTML = `<button class="quantity-btn" data-id="${item.id}" data-change="-1">−</button><span class="item-quantity">${item.quantity}</span><button class="quantity-btn" data-id="${item.id}" data-change="1">+</button><span class="item-total-price">₱${formatPrice(item.price * item.quantity)}</span><button class="remove-item-btn" data-id="${item.id}">×</button>`;
 
                 li.append(itemDetails, itemControls);
                 fragment.appendChild(li);
@@ -207,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             cartItems.appendChild(fragment);
         }
-        cartTotal.textContent = `Total: ₱${total.toFixed(2)}`;
+        cartTotal.textContent = `Total: ₱${formatPrice(total)}`;
 
         // Auto-scroll to the bottom of the cart
         cartItems.scrollTop = cartItems.scrollHeight;
@@ -227,36 +270,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderReceiptForPrinting(saleId, saleData) {
         const saleDate = new Date().toLocaleString();
-        const cashierName = welcomeUser.textContent || 'N/A';
+        const cashierName = saleData.cashier_name || welcomeUser.textContent || 'N/A';
+        const customerName = saleData.customer_name || 'Walk-in Customer';
 
+        // Enhanced item list
         let itemsHtml = '';
         saleData.items.forEach(item => {
             itemsHtml += `
                 <tr>
-                    <td class="item-col">${item.name}</td>
-                    <td class="qty-col">${item.quantity}</td>
-                    <td class="price-col">₱${(item.price * item.quantity).toFixed(2)}</td>
+                    <td>
+                        ${item.name}<br>
+                        <small>${item.quantity} x @ ${formatPrice(item.price)}</small>
+                    </td>
+                    <td class="price-col">₱${formatPrice(item.price * item.quantity)}</td>
                 </tr>
             `;
         });
 
+        // Payment details section
+        let paymentDetailsHtml = `<p><small>Paid via: ${saleData.payment_method.charAt(0).toUpperCase() + saleData.payment_method.slice(1)}</small></p>`;
+        if (saleData.payment_method === 'cash') {
+            const cashReceived = saleData.cash_received || 0;
+            const changeDue = cashReceived > saleData.total_amount ? cashReceived - saleData.total_amount : 0;
+            paymentDetailsHtml += `
+                <p><small>Cash Tendered: ₱${formatPrice(cashReceived)}</small></p>
+                <p><small>Change: ₱${formatPrice(changeDue)}</small></p>
+            `;
+        }
+
         printContainer.innerHTML = `
             <div class="receipt-container">
                 <header>
-                    <h1>Sale Receipt</h1>
-                    <p>Your Store Name</p>
+                    <h1>Your Store Name</h1>
+                    <p>123 Tech Street, Silicon Valley, PH</p>
+                    <p>Contact: (123) 456-7890</p>
                 </header>
                 <main id="receipt-details">
                     <div class="receipt-info">
-                        <p><strong>Sale ID:</strong> ${saleId}</p>
+                        <p><strong>OR #:</strong> ${saleId}</p>
                         <p><strong>Cashier:</strong> ${cashierName}</p>
+                        <p><strong>Customer:</strong> ${customerName}</p>
                         <p><strong>Date:</strong> ${saleDate}</p>
                     </div>
                     <table>
                         <thead>
                             <tr>
-                                <th class="item-col">Item</th>
-                                <th class="qty-col">Qty</th>
+                                <th>Item</th>
                                 <th class="price-col">Subtotal</th>
                             </tr>
                         </thead>
@@ -264,8 +323,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             ${itemsHtml}
                         </tbody>
                     </table>
-                    <div class="total-section">
-                        Total: ₱${saleData.total_amount.toFixed(2)}
+                    <div class="summary-section">
+                        <p><span>Total:</span> <strong>₱${formatPrice(saleData.total_amount)}</strong></p>
+                    </div>
+                    <div class="payment-details-section">
+                        ${paymentDetailsHtml}
                     </div>
                 </main>
                 <footer>
@@ -275,31 +337,39 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
-    async function completeSale() {
+    async function completeSale(paymentMethod, customerName) {
         if (cart.length === 0) {
             alert('Cart is empty!');
             return;
         }
 
         const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const salePayload = {
+            total_amount: totalAmount,
+            items: cart,
+            payment_method: paymentMethod,
+            customer_name: customerName
+        };
 
         try {
             const response = await fetch('/api/sales', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ total_amount: totalAmount, items: cart }),
+                body: JSON.stringify(salePayload),
             });
 
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || 'Sale completion failed');
             }
-
             const result = await response.json();
 
+            const cashReceived = parseFloat(cashReceivedInput.value) || 0;
+            // Add new data to the object for receipt printing
+            const receiptData = { ...salePayload, cash_received: cashReceived };
             if (confirm(`Sale completed successfully! Print receipt?`)) {
                 // Render receipt into the hidden div and print
-                renderReceiptForPrinting(result.saleId, { total_amount: totalAmount, items: cart });
+                renderReceiptForPrinting(result.saleId, receiptData);
                 window.print();
                 printContainer.innerHTML = ''; // Clear after printing
             }
@@ -314,7 +384,85 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Event Listeners
-    completeSaleBtn.addEventListener('click', completeSale);
+    completeSaleBtn.addEventListener('click', () => {
+        if (cart.length === 0) {
+            alert('Cart is empty!');
+            return;
+        }
+        const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        paymentTotalEl.textContent = `Total: ₱${formatPrice(total)}`;
+        cashReceivedInput.value = '';
+        changeDueEl.value = '₱0.00';
+        confirmPaymentBtn.disabled = true;
+        paymentModal.style.display = 'flex';
+        cashReceivedInput.focus();
+    });
+
+    closeModalBtn.addEventListener('click', () => {
+        paymentModal.style.display = 'none';
+    });
+
+    cashReceivedInput.addEventListener('input', () => {
+        const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const cashReceived = parseFloat(cashReceivedInput.value) || 0;
+        const change = cashReceived - total;
+        confirmPaymentBtn.disabled = cashReceived < total;
+        changeDueEl.value = `₱${formatPrice(Math.max(0, change))}`;
+    });
+
+    exactCashBtn.addEventListener('click', () => {
+        const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        cashReceivedInput.value = total.toFixed(2);
+        // Manually trigger the input event to update the change
+        cashReceivedInput.dispatchEvent(new Event('input'));
+    });
+
+    paymentModal.addEventListener('click', (e) => {
+        if (e.target === paymentModal) {
+            paymentModal.style.display = 'none';
+        }
+    });
+
+    paymentModal.addEventListener('click', (e) => {
+        if (e.target === paymentModal) {
+            paymentModal.style.display = 'none';
+        }
+    });
+
+    document.querySelectorAll('.payment-method-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.payment-method-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            paymentMethodInput.value = btn.dataset.method;
+            cashPaymentDetails.style.display = btn.dataset.method === 'cash' ? 'block' : 'none';
+            // Re-evaluate button state when switching payment method
+            if (btn.dataset.method !== 'cash') {
+                confirmPaymentBtn.disabled = false;
+            } else {
+                cashReceivedInput.dispatchEvent(new Event('input'));
+            }
+        });
+    });
+
+    document.querySelectorAll('.quick-cash-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const amount = btn.dataset.amount;
+            const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+            let cashValue = 0;
+
+            if (amount === 'next-bill') {
+                const bills = [20, 50, 100, 200, 500, 1000];
+                cashValue = bills.find(bill => bill >= total) || total;
+            } else {
+                cashValue = parseFloat(amount);
+            }
+
+            cashReceivedInput.value = cashValue.toFixed(2);
+            // Manually trigger the input event to update the change and button state
+            cashReceivedInput.dispatchEvent(new Event('input'));
+        });
+    });
+
     clearCartBtn.addEventListener('click', clearCart);
 
     cartItems.addEventListener('click', (e) => {
@@ -331,9 +479,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     searchInput.addEventListener('input', (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        const filteredProducts = allProducts.filter(p => p.name.toLowerCase().includes(searchTerm));
-        renderProducts(filteredProducts);
+        const searchTerm = e.target.value;
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        const filteredProducts = allProducts.filter(p => 
+            p.name.toLowerCase().includes(lowerCaseSearchTerm) || 
+            (p.barcode && p.barcode.includes(searchTerm))
+        );
+        displayProducts(filteredProducts);
     });
 
     // Optimized event delegation for product list
@@ -484,9 +636,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // When Enter is pressed in the search input, focus the product list
-        if (e.key === 'Enter' && document.activeElement === searchInput) {
+        if (e.key === 'Enter' && document.activeElement === searchInput) { 
             e.preventDefault();
-            productList.querySelector('.product-item')?.focus();
+            const searchTerm = searchInput.value.trim();
+
+            // Prioritize barcode scan
+            const productByBarcode = allProducts.find(p => p.barcode === searchTerm);
+
+            if (productByBarcode) {
+                addToCart(productByBarcode);
+                searchInput.value = ''; // Clear input for next scan
+                // Trigger input event to reset the filtered list
+                searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            } else {
+                // If no barcode match, default to focusing the first visible product
+                const firstProduct = productList.querySelector('.product-item');
+                if (firstProduct) firstProduct.focus();
+            }
         }
 
         // Shortcut to focus search: Alt + S
@@ -504,7 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Shortcut to complete sale: F9
         if (e.key === 'F9') {
             e.preventDefault();
-            completeSale();
+            completeSaleBtn.click(); // Open the payment modal
         }
 
         // Shortcut to clear cart: F4
@@ -520,6 +686,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // Handle cart item navigation
             handleCartNavigation(e);
         }
+    });
+
+    paymentForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const paymentMethod = paymentMethodInput.value;
+        const customerName = document.getElementById('customer-name').value.trim();
+        completeSale(paymentMethod, customerName);
+        paymentModal.style.display = 'none';
     });
 
     // Initial load

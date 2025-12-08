@@ -39,59 +39,117 @@
         <div class="admin-grid-container">
             <!-- Main Content -->
             <div class="admin-main-content">
+                <div class="summary-grid">
+                    <div class="card summary-card">
+                        <h3>Today's Revenue</h3>
+                        <p id="summary-total-revenue">₱0.00</p>
+                    </div>
+                    <div class="card summary-card">
+                        <h3>Today's Sales</h3>
+                        <p id="summary-sales-count">0</p>
+                    </div>
+                    <div class="card summary-card">
+                        <h3>Total Products</h3>
+                        <p id="summary-total-products">0</p>
+                    </div>
+                    <div class="card summary-card">
+                        <h3>Low Stock Items</h3>
+                        <p id="summary-low-stock-count">0</p>
+                    </div>
+                </div>
                 <div class="card">
                     <div class="card-header">
                         <h2>Daily Sales Report</h2>
                         <button id="export-csv-btn" style="display: none;">Export to CSV</button>
                     </div>
-                    <div class="report-filters">
-                        <label for="start-date">From:</label>
-                        <input type="date" id="start-date">
-                        <label for="end-date">To:</label>
-                        <input type="date" id="end-date">
-                        <button id="filter-report-btn">Filter</button>
-                        <button id="reset-filter-btn" class="secondary-btn" style="display: none;">Reset</button>
-                    </div>
+                    <form class="report-filters-container" id="report-date-filter">
+                        <div class="quick-filters">
+                            <button type="button" class="quick-filter-btn" data-range="today">Today</button>
+                            <button type="button" class="quick-filter-btn" data-range="week">This Week</button>
+                            <button type="button" class="quick-filter-btn" data-range="month">This Month</button>
+                        </div>
+                        <div class="date-inputs">
+                            <label for="start-date">From:</label>
+                            <input type="date" id="start-date">
+                            <label for="end-date">To:</label>
+                            <input type="date" id="end-date">
+                            <button type="submit" id="filter-report-btn">Filter</button>
+                        </div>
+                    </form>
                     <div class="chart-container">
                         <canvas id="sales-chart"></canvas>
                     </div>
                     <div id="daily-sales-report">
-                        <p>Loading report...</p>
+                        <table class="report-table" id="daily-sales-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Sales</th>
+                                    <th>Items Sold</th>
+                                    <th>Avg. Sale</th>
+                                    <th>Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="5" class="no-results">Loading report...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header">
                         <h2>Sales History</h2>
-                        <input type="search" id="sales-history-search" placeholder="Search by Sale ID...">
+                        <input type="search" id="search-sales" placeholder="Search by Sale ID...">
                     </div>
                     <div id="sales-history-list">
                         <p>Loading sales history...</p>
+                    </div>
+                    <div class="pagination-controls" id="sales-history-pagination">
+                        <button id="prev-page" disabled>&laquo; Previous</button>
+                        <span id="page-info">Page 1 of 1</span>
+                        <button id="next-page" disabled>Next &raquo;</button>
                     </div>
                 </div>
             </div>
             <!-- Sidebar -->
             <div class="admin-sidebar">
-                <div class="card card-alert">
+                <div class="card" id="low-stock-card">
                     <h2>Low Stock Alerts</h2>
                     <div id="low-stock-report">
-                        <p>Loading alerts...</p>
+                        <ul id="low-stock-list" class="low-stock-list">
+                            <li>Loading alerts...</li>
+                        </ul>
                     </div>
                 </div>
                 <div class="card">
                     <h2>Top-Selling Products</h2>
                     <div id="top-selling-report">
-                        <p>Loading report...</p>
+                        <ul id="top-selling-list" class="top-selling-list">
+                            <li>Loading report...</li>
+                        </ul>
                     </div>
                 </div>
                 <div class="card">
                     <h2>Cashier Performance</h2>
                     <div id="cashier-performance-report">
-                        <p>Loading report...</p>
+                        <table class="report-table" id="cashier-performance-table">
+                             <thead>
+                                <tr>
+                                    <th>Cashier</th>
+                                    <th>Sales</th>
+                                    <th>Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="3" class="no-results">Loading report...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
         </div>
     </main>
+    <script src="/js/admin-helpers.js"></script>
     <script src="/js/admin.js" defer></script>
 </body>
 </html>

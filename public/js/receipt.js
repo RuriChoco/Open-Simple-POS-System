@@ -29,29 +29,33 @@ function renderReceipt(sale) {
     const receiptDetails = document.getElementById('receipt-details');
 
     const saleDate = new Date(sale.sale_date).toLocaleString();
-
+    const customerName = sale.customer_name || 'Walk-in Customer';
+    const paymentMethod = sale.payment_method ? sale.payment_method.charAt(0).toUpperCase() + sale.payment_method.slice(1) : 'N/A';
+    
     let itemsHtml = '';
     sale.items.forEach(item => {
         itemsHtml += `
             <tr>
-                <td class="item-col">${item.product_name}</td>
-                <td class="qty-col">${item.quantity}</td>
-                <td class="price-col">₱${(item.price_at_sale * item.quantity).toFixed(2)}</td>
+                <td>
+                    ${item.product_name}<br>
+                    <small>${item.quantity} x @ ${(item.price_at_sale).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</small>
+                </td>
+                <td class="price-col">₱${(item.price_at_sale * item.quantity).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
             </tr>
         `;
     });
 
     receiptDetails.innerHTML = `
         <div class="receipt-info">
-            <p><strong>Sale ID:</strong> ${sale.sale_id}</p>
+            <p><strong>OR #:</strong> ${sale.sale_id}</p>
             <p><strong>Cashier:</strong> ${sale.cashier_name}</p>
+            <p><strong>Customer:</strong> ${customerName}</p>
             <p><strong>Date:</strong> ${saleDate}</p>
         </div>
         <table>
             <thead>
                 <tr>
-                    <th class="item-col">Item</th>
-                    <th class="qty-col">Qty</th>
+                    <th>Item</th>
                     <th class="price-col">Subtotal</th>
                 </tr>
             </thead>
@@ -59,8 +63,11 @@ function renderReceipt(sale) {
                 ${itemsHtml}
             </tbody>
         </table>
-        <div class="total-section">
-            Total: ₱${sale.total_amount.toFixed(2)}
+        <div class="summary-section">
+            <p><span>Total:</span> <strong>₱${(sale.total_amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></p>
+        </div>
+        <div class="payment-details-section">
+             <p><small>Paid via: ${paymentMethod}</small></p>
         </div>
     `;
 }

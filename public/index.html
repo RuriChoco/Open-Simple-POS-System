@@ -28,6 +28,11 @@
                         <path d="M11.02 3.342a.514.514 0 0 1 .514.514v9.288a.514.514 0 0 1-.514.514H4.48a.514.514 0 0 1-.514-.514V3.856a.514.514 0 0 1 .514-.514zM4.48 2.342a1.514 1.514 0 0 0-1.514 1.514v9.288a1.514 1.514 0 0 0 1.514 1.514h6.54a1.514 1.514 0 0 0 1.514-1.514V3.856a1.514 1.514 0 0 0-1.514-1.514z"/>
                     </svg>
                 </button>
+                <button id="list-view-btn" class="mode-btn" title="List View">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M2 12.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5m-2-4a.5.5 0 0 1 .5-.5h15a.5.5 0 0 1 0 1h-15a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h15a.5.5 0 0 1 0 1h-15a.5.5 0 0 1-.5-.5"/>
+                    </svg>
+                </button>
             </div>
             <div class="connection-status">
                 <div id="status-indicator" class="status-indicator"></div>
@@ -69,6 +74,52 @@
             </div>
         </div>
     </main>
+
+    <!-- Payment Modal -->
+    <div id="payment-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <button id="modal-close-btn" class="modal-close-btn">&times;</button>
+            <h2>Complete Sale</h2>
+            <form id="payment-form">
+                <div class="form-group">
+                    <label for="customer-name">Customer Name (Optional)</label>
+                    <input type="text" id="customer-name" placeholder="e.g., Juan Dela Cruz">
+                </div>
+                <div class="form-group">
+                    <label>Payment Method</label>
+                    <div class="payment-methods">
+                        <button type="button" class="payment-method-btn active" data-method="cash">Cash</button>
+                        <button type="button" class="payment-method-btn" data-method="gcash">GCash</button>
+                        <button type="button" class="payment-method-btn" data-method="maya">Maya</button>
+                    </div>
+                </div>
+                <div id="cash-payment-details" class="form-group">
+                    <label for="cash-received">Cash Received</label>
+                    <div class="input-with-button">
+                        <input type="number" id="cash-received" placeholder="0.00" step="0.01">
+                        <button type="button" id="exact-cash-btn">Exact</button>
+                    </div>
+                    <div class="quick-cash-buttons">
+                        <button type="button" class="quick-cash-btn" data-amount="500">₱500</button>
+                        <button type="button" class="quick-cash-btn" data-amount="1000">₱1000</button>
+                        <button type="button" class="quick-cash-btn" data-amount="next-bill">Next Bill</button>
+                        <button type="button" class="quick-cash-btn" data-amount="20">₱20</button>
+                        <button type="button" class="quick-cash-btn" data-amount="50">₱50</button>
+                        <button type="button" class="quick-cash-btn" data-amount="100">₱100</button>
+                        <button type="button" class="quick-cash-btn" data-amount="200">₱200</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="change-due">Change Due</label>
+                    <input type="text" id="change-due" value="₱0.00" readonly class="readonly-input">
+                </div>
+
+                <div id="payment-total" class="payment-total">Total: ₱0.00</div>
+                <input type="hidden" id="payment-method-input" value="cash">
+                <button type="submit" class="btn-block">Confirm Payment</button>
+            </form>
+        </div>
+    </div>
 
     <!-- Hidden container for printing receipts directly from this page -->
     <div id="receipt-container-print" class="print-only"></div>

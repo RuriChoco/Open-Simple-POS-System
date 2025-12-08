@@ -16,3 +16,8 @@ build/
 # Database files
 *.sqlite
 *.db
+
+# Generated files
+.DS_Store
+Thumbs.db
+generate_products.py

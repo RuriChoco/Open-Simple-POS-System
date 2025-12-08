@@ -1,23 +1,17 @@
+// public/js/admin.js
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Element Cache ---
-    const salesHistoryList = document.getElementById('sales-history-list');
-    const salesHistorySearch = document.getElementById('sales-history-search');
-    const dailySalesContainer = document.getElementById('daily-sales-report');
     const logoutBtn = document.getElementById('logout-btn');
-    const topSellingContainer = document.getElementById('top-selling-report');
-    const cashierPerformanceContainer = document.getElementById('cashier-performance-report');
-    const lowStockContainer = document.getElementById('low-stock-report');
-    const startDateInput = document.getElementById('start-date');
-    const endDateInput = document.getElementById('end-date');
-    const filterReportBtn = document.getElementById('filter-report-btn');
-    const resetFilterBtn = document.getElementById('reset-filter-btn');
-    const exportCsvBtn = document.getElementById('export-csv-btn');
     const welcomeUser = document.getElementById('welcome-user');
     const statusIndicator = document.getElementById('status-indicator');
     const statusText = document.getElementById('status-text');
-    let salesChartInstance = null; // To hold the chart instance
 
-    // --- WebSocket Setup ---
+    // --- Dashboard Summary ---
+    const totalRevenueEl = document.getElementById('summary-total-revenue');
+    const salesCountEl = document.getElementById('summary-sales-count');
+    const totalProductsEl = document.getElementById('summary-total-products');
+    const lowStockCountEl = document.getElementById('summary-low-stock-count');
+
+    // --- WebSocket & Session Logic ---
     function connectWebSocket() {
         const ws = new WebSocket(`ws://${window.location.host}`);
 
@@ -26,25 +20,18 @@ document.addEventListener('DOMContentLoaded', () => {
             statusIndicator.classList.remove('disconnected');
             statusIndicator.classList.add('connected');
             statusText.textContent = 'Live';
-            // On successful connection, fetch latest data
-            fetchDailySalesReport();
-            fetchSalesHistory();
         };
 
         ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
-            console.log('Admin dashboard received message:', message.type);
-
-            switch (message.type) {
-                case 'PRODUCTS_UPDATED':
-                    fetchLowStockAlerts();
-                    // Top selling might also change
-                    fetchDailySalesReport(startDateInput.value, endDateInput.value);
-                    break;
-                case 'SALES_UPDATED':
-                    fetchDailySalesReport(startDateInput.value, endDateInput.value);
-                    fetchSalesHistory();
-                    break;
+            // Refresh data if another user makes a change
+            if (message.type === 'PRODUCTS_UPDATED' || message.type === 'SALES_UPDATED' || message.type === 'LOGS_UPDATED') {
+                console.log(`${message.type} event received, refreshing dashboard...`);
+                // Re-fetch all dashboard data
+                fetchDashboardSummary();
+                fetchSalesHistory(currentPage, searchSalesInput.value);
+                fetchAllReports();
+                fetchLowStock();
             }
         };
 
@@ -55,622 +42,401 @@ document.addEventListener('DOMContentLoaded', () => {
             statusText.textContent = 'Offline';
             setTimeout(connectWebSocket, 5000);
         };
-
-        ws.onerror = () => {
-            statusIndicator.classList.remove('connected');
-            statusIndicator.classList.add('disconnected');
-            statusText.textContent = 'Error';
-        };
     }
 
-    // --- FUNCTION DECLARATIONS ---
-
-    // --- Centralized API Fetching with Auth Handling ---
-    async function fetchWithAuth(url, options = {}) {
-        const response = await fetch(url, options);
-        if (response.status === 401) {
-            window.location.href = '/login';
-            throw new Error('Session expired. Redirecting to login.');
-        }
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    }
-
-    // --- Auth & Session ---
     async function checkSession() {
         try {
-            const { user } = await fetchWithAuth('/api/users/session');
+            const response = await fetch('/api/users/session');
+            if (!response.ok) throw new Error('Not authenticated');
+            const { user } = await response.json();
             welcomeUser.textContent = user.username;
         } catch (error) {
-            window.location.href = '/login';
+            window.location.href = '/login'; // Redirect if not logged in
+        }
+    }
+
+    logoutBtn.addEventListener('click', async () => {
+        await fetch('/api/users/logout', { method: 'POST' });
+        window.location.href = '/login';
+    });
+
+    async function fetchDashboardSummary() {
+        try {
+            const response = await fetch('/api/reports/dashboard-summary');
+            if (!response.ok) throw new Error('Failed to fetch summary');
+            const { data } = await response.json();
+
+            totalRevenueEl.textContent = `₱${formatPrice(data.totalRevenue)}`;
+            salesCountEl.textContent = data.salesCount;
+            totalProductsEl.textContent = data.totalProducts;
+            lowStockCountEl.textContent = data.lowStockCount;
+
+            if (data.lowStockCount > 0) {
+                document.getElementById('low-stock-card').classList.add('card-alert');
+            }
+
+        } catch (error) {
+            console.error('Error fetching dashboard summary:', error);
         }
     }
 
     // --- Sales History ---
-    async function fetchSalesHistory(page = 1, searchTerm = '') {
+    const salesHistoryList = document.getElementById('sales-history-list');
+    const paginationControls = document.getElementById('sales-history-pagination');
+    const prevPageBtn = document.getElementById('prev-page');
+    const nextPageBtn = document.getElementById('next-page');
+    const pageInfo = document.getElementById('page-info');
+    const searchSalesInput = document.getElementById('search-sales');
+
+    let currentPage = 1;
+
+    async function fetchSalesHistory(page = 1, search = '') {
         try {
-            const params = new URLSearchParams({ page, limit: 10 });
-            if (searchTerm) params.append('search', searchTerm);
-            const { data, pagination } = await fetchWithAuth(`/api/sales/history?${params.toString()}`);
-            renderSalesHistory(data, pagination);
+            const response = await fetch(`/api/sales/history?page=${page}&limit=5&search=${search}`);
+            if (!response.ok) throw new Error('Failed to fetch sales history');
+            const { data, pagination } = await response.json();
+
+            renderSalesHistory(data);
+            renderPagination(pagination);
         } catch (error) {
-            console.error('Failed to fetch sales history:', error);
-            salesHistoryList.innerHTML = '<p>Error loading sales history.</p>';
+            console.error('Error fetching sales history:', error);
+            salesHistoryList.innerHTML = '<p class="no-results">Error loading sales history.</p>';
         }
     }
 
-    function renderSalesHistory(sales, pagination) {
+    function renderSalesHistory(sales) {
         salesHistoryList.innerHTML = '';
-        if (!sales || sales.length === 0) {
-            const searchTerm = salesHistorySearch.value;
-            const message = document.createElement('p');
-            message.textContent = searchTerm ? `No sale found for ID "${searchTerm}".` : 'No sales have been recorded yet.';
-            salesHistoryList.appendChild(message);
+        if (sales.length === 0) {
+            salesHistoryList.innerHTML = '<p class="no-results">No sales found.</p>';
             return;
         }
 
         sales.forEach(sale => {
-            const saleDate = new Date(sale.sale_date).toLocaleString();
-            const saleElement = document.createElement('details');
-            saleElement.className = 'sale-history-item';
+            const saleItem = document.createElement('details');
+            saleItem.className = 'sale-history-item';
+            saleItem.dataset.saleId = sale.id;
 
             const summary = document.createElement('summary');
-            summary.innerHTML = `<div class="summary-main"><span>Sale #${sale.sale_id} - <strong>₱${sale.total_amount.toFixed(2)}</strong></span><span class="cashier-name"></span><time>${saleDate}</time></div><div class="sale-actions"><button class="reprint-btn" data-id="${sale.sale_id}" title="Reprint Receipt">Reprint</button><button class="void-btn" data-id="${sale.sale_id}" title="Void Sale">Void</button></div>`;
-            summary.querySelector('.cashier-name').textContent = `Cashier: ${sale.cashier_name || 'N/A'}`;
+            summary.innerHTML = `
+                <div class="summary-main">
+                    <span>Sale #${sale.id} - <strong>₱${formatPrice(sale.total_amount)}</strong></span>
+                    <small>${new Date(sale.sale_date).toLocaleString()} by ${sale.cashier_name || 'N/A'}</small>
+                </div>
+                <div class="sale-actions">
+                    <button class="reprint-btn action-btn">Reprint</button>
+                    <button class="void-btn action-btn">Void</button>
+                </div>
+            `;
 
             const itemsList = document.createElement('ul');
             itemsList.className = 'sale-items-list';
-            if (sale.items && sale.items.length > 0) {
-                sale.items.forEach(item => {
-                    const li = document.createElement('li');
-                    li.textContent = `${item.quantity}x ${item.product_name}`;
-                    itemsList.appendChild(li);
-                });
-            } else {
+            sale.items.forEach(item => {
                 const li = document.createElement('li');
-                li.textContent = 'No items found for this sale.';
+                li.textContent = `${item.quantity}x ${item.product_name} @ ₱${formatPrice(item.price_at_sale)}`;
                 itemsList.appendChild(li);
-            }
-
-            saleElement.append(summary, itemsList);
-            salesHistoryList.appendChild(saleElement);
-        });
-
-        salesHistoryList.querySelectorAll('.sale-actions button').forEach(button => {
-            button.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const saleId = button.dataset.id;
-                if (button.classList.contains('void-btn')) {
-                    if (confirm(`Are you sure you want to void Sale #${saleId}? This action cannot be undone.`)) {
-                        await fetchWithAuth(`/api/sales/${saleId}`, { method: 'DELETE' });
-                        fetchSalesHistory();
-                        fetchDailySalesReport();
-                    }
-                } else if (button.classList.contains('reprint-btn')) {
-                    window.open(`/receipt/${saleId}`, '_blank');
-                }
             });
+
+            saleItem.append(summary, itemsList);
+            salesHistoryList.appendChild(saleItem);
         });
-
-        const salesHistoryCard = document.getElementById('sales-history-list').parentElement;
-        salesHistoryCard.querySelector('.pagination-controls')?.remove();
-        if (!pagination || !pagination.totalPages) return;
-
-        const paginationControls = document.createElement('div');
-        paginationControls.className = 'pagination-controls';
-        const prevButton = document.createElement('button');
-        prevButton.textContent = 'Previous';
-        prevButton.disabled = pagination.currentPage === 1;
-        prevButton.addEventListener('click', () => fetchSalesHistory(pagination.currentPage - 1));
-        const nextButton = document.createElement('button');
-        nextButton.textContent = 'Next';
-        nextButton.disabled = pagination.currentPage === pagination.totalPages;
-        nextButton.addEventListener('click', () => fetchSalesHistory(pagination.currentPage + 1));
-        const pageInfo = document.createElement('span');
-        pageInfo.textContent = `Page ${pagination.currentPage} of ${pagination.totalPages}`;
-        paginationControls.appendChild(prevButton);
-        paginationControls.appendChild(pageInfo);
-        paginationControls.appendChild(nextButton);
-        salesHistoryCard.appendChild(paginationControls);
     }
+
+    function renderPagination(pagination) {
+        currentPage = pagination.currentPage;
+        pageInfo.textContent = `Page ${pagination.currentPage} of ${pagination.totalPages}`;
+        prevPageBtn.disabled = pagination.currentPage <= 1;
+        nextPageBtn.disabled = pagination.currentPage >= pagination.totalPages;
+    }
+
+    prevPageBtn.addEventListener('click', () => fetchSalesHistory(currentPage - 1, searchSalesInput.value));
+    nextPageBtn.addEventListener('click', () => fetchSalesHistory(currentPage + 1, searchSalesInput.value));
+    searchSalesInput.addEventListener('input', () => fetchSalesHistory(1, searchSalesInput.value));
+
+    // Event delegation for void/reprint
+    salesHistoryList.addEventListener('click', async (e) => {
+        const target = e.target;
+        const saleId = target.closest('.sale-history-item')?.dataset.saleId;
+
+        if (!saleId) return;
+
+        if (target.classList.contains('void-btn')) {
+            if (confirm(`Are you sure you want to void Sale #${saleId}? This action cannot be undone.`)) {
+                try {
+                    const response = await fetch(`/api/sales/${saleId}`, { method: 'DELETE' });
+                    if (!response.ok) throw new Error('Failed to void sale');
+                    alert('Sale voided successfully.');
+                    fetchSalesHistory(currentPage, searchSalesInput.value); // Refresh list
+                    fetchDashboardSummary(); // Refresh summary
+                } catch (error) {
+                    console.error('Error voiding sale:', error);
+                    alert('Error voiding sale. Please try again.');
+                }
+            }
+        }
+
+        if (target.classList.contains('reprint-btn')) {
+            window.open(`/receipt/${saleId}`, '_blank');
+        }
+    });
 
     // --- Reports ---
-    async function fetchDailySalesReport(startDate, endDate) {
+    const reportsContainer = document.getElementById('reports-container');
+    const reportDateFilter = document.getElementById('report-date-filter');
+    const startDateInput = document.getElementById('start-date');
+    const endDateInput = document.getElementById('end-date');
+    const exportCsvBtn = document.getElementById('export-csv-btn');
+    const salesChartCanvas = document.getElementById('sales-chart');
+    let salesChart; // To hold the chart instance
+    let currentDailyReportData = []; // Store current report data for export
+
+    // Set default dates
+    const today = new Date().toISOString().split('T')[0];
+    startDateInput.value = today;
+    endDateInput.value = today;
+
+    function setDateRange(range) {
+        const today = new Date();
+        let start = new Date();
+        let end = new Date();
+
+        switch (range) {
+            case 'today':
+                // Already set
+                break;
+            case 'week':
+                const dayOfWeek = today.getDay(); // 0=Sunday, 1=Monday...
+                start.setDate(today.getDate() - dayOfWeek);
+                end.setDate(start.getDate() + 6);
+                break;
+            case 'month':
+                start = new Date(today.getFullYear(), today.getMonth(), 1);
+                end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                break;
+        }
+
+        // Format to YYYY-MM-DD
+        const toYYYYMMDD = (d) => d.toISOString().split('T')[0];
+        startDateInput.value = toYYYYMMDD(start);
+        endDateInput.value = toYYYYMMDD(end);
+
+        // Trigger the report fetch
+        fetchAllReports();
+    }
+
+    document.querySelectorAll('.quick-filter-btn').forEach(button => {
+        button.addEventListener('click', (e) => {
+            // Remove active class from all buttons
+            document.querySelectorAll('.quick-filter-btn').forEach(btn => btn.classList.remove('active'));
+            // Add active class to the clicked button
+            e.target.classList.add('active');
+            
+            const range = e.target.dataset.range;
+            setDateRange(range);
+        });
+    });
+
+    async function fetchAllReports() {
+        const startDate = startDateInput.value;
+        const endDate = endDateInput.value;
+        const query = `?startDate=${startDate}&endDate=${endDate}`;
+
+        // Fetch and render all different reports
+        fetchAndRenderReport(`/api/sales/daily-report${query}`, 'daily-sales-table', renderDailySalesReport);
+        fetchAndRenderReport(`/api/reports/top-selling${query}`, 'top-selling-list', renderTopSellingReport);
+        fetchAndRenderReport(`/api/reports/cashier-performance${query}`, 'cashier-performance-table', renderCashierPerformanceReport);
+    }
+
+    async function fetchAndRenderReport(url, elementId, renderer) {
+        const targetElement = document.getElementById(elementId);
         try {
-            const params = new URLSearchParams();
-            if (startDate && endDate) {
-                params.append('startDate', startDate);
-                params.append('endDate', endDate);
-            }
-            const { data: reportData } = await fetchWithAuth(`/api/sales/daily-report?${params.toString()}`);
-            renderDailySalesReport(reportData);
-            if (reportData && reportData.length > 0) {
-                renderSalesReportChart(reportData);
-            }
-            fetchTopSellingProducts(startDate, endDate);
-            fetchCashierPerformance(startDate, endDate);
-            fetchLowStockAlerts(); // Refresh low stock alerts too
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Failed to fetch ${url}`);
+            const { data } = await response.json();
+            renderer(data, targetElement);
         } catch (error) {
-            console.error('Failed to fetch daily sales report:', error);
-            dailySalesContainer.innerHTML = '<p>Error loading daily report.</p>';
+            console.error(`Error fetching report for ${elementId}:`, error);
+            targetElement.innerHTML = '<li>Error loading report.</li>';
         }
     }
 
-    function renderDailySalesReport(reportData) {
-        exportCsvBtn.style.display = 'none';
-        if (!reportData || reportData.length === 0) {
-            dailySalesContainer.innerHTML = '<p>No sales data available for the report.</p>';
-            document.querySelector('.chart-container').style.display = 'none';
+    function renderDailySalesReport(data, element) {
+        const tbody = element.querySelector('tbody');
+        tbody.innerHTML = '';
+
+        currentDailyReportData = data; // Store data for export
+        exportCsvBtn.style.display = data.length > 0 ? 'inline-block' : 'none';
+
+        // Also clear/destroy the chart if no data
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="no-results">No sales data for this period.</td></tr>';
+            if (salesChart) {
+                salesChart.destroy();
+                salesChart = null;
+            }
             return;
         }
-        exportCsvBtn.style.display = 'inline-block';
-        document.querySelector('.chart-container').style.display = 'block';
 
-        const table = document.createElement('table');
-        table.className = 'report-table';
-        table.innerHTML = `
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Sales Count</th>
-                    <th>Items Sold</th>
-                    <th>Total Revenue</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${reportData.map(row => `
-                    <tr>
-                        <td>${new Date(row.report_date).toLocaleDateString()}</td>
-                        <td>${row.number_of_sales}</td>
-                        <td>${row.total_items_sold}</td>
-                        <td>₱${row.total_revenue.toFixed(2)}</td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        `;
-        dailySalesContainer.innerHTML = '';
-        dailySalesContainer.appendChild(table);
-        exportCsvBtn.onclick = () => exportReportToCsv(reportData);
+        data.slice().reverse().forEach(row => { // Reverse to show oldest date first in table
+            const tr = document.createElement('tr');
+            const avgSale = row.number_of_sales > 0 ? row.total_revenue / row.number_of_sales : 0;
+            tr.innerHTML = `
+                <td>${new Date(row.report_date).toLocaleDateString()}</td>
+                <td>${row.number_of_sales}</td>
+                <td>${row.total_items_sold}</td>
+                <td>₱${formatPrice(avgSale)}</td>
+                <td><strong>₱${formatPrice(row.total_revenue)}</strong></td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        renderSalesChart(data);
     }
 
-    function renderSalesReportChart(reportData) {
-        const ctx = document.getElementById('sales-chart').getContext('2d');
-        const sortedData = [...reportData].reverse();
-        const labels = sortedData.map(row => new Date(row.report_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
-        const revenues = sortedData.map(row => row.total_revenue);
-        const salesCounts = sortedData.map(row => row.number_of_sales);
-
-        if (salesChartInstance) {
-            salesChartInstance.destroy();
+    function renderSalesChart(data) {
+        if (salesChart) {
+            salesChart.destroy();
         }
 
-        salesChartInstance = new Chart(ctx, {
+        const chartData = data.slice().reverse(); // Reverse for chronological order on the chart
+        const labels = chartData.map(row => new Date(row.report_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
+        const revenueData = chartData.map(row => row.total_revenue);
+
+        const ctx = salesChartCanvas.getContext('2d');
+        salesChart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: labels,
-                datasets: [
-                    {
-                        label: 'Number of Sales',
-                        data: salesCounts,
-                        backgroundColor: 'rgba(255, 159, 64, 0.5)',
-                        borderColor: 'rgba(255, 159, 64, 1)',
-                        borderWidth: 1,
-                        yAxisID: 'y-sales',
-                    },
-                    {
-                        label: 'Total Revenue',
-                        data: revenues,
-                        type: 'line',
-                        fill: true,
-                        backgroundColor: 'rgba(0, 123, 255, 0.2)',
-                        borderColor: 'rgba(0, 123, 255, 1)',
-                        borderWidth: 2,
-                        tension: 0.1,
-                        yAxisID: 'y-revenue',
-                    }
-                ]
+                datasets: [{
+                    label: 'Total Revenue',
+                    data: revenueData,
+                    backgroundColor: 'rgba(0, 123, 255, 0.6)',
+                    borderColor: 'rgba(0, 123, 255, 1)',
+                    borderWidth: 1
+                }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
                 scales: {
-                    'y-revenue': {
-                        type: 'linear',
-                        position: 'left',
-                        beginAtZero: true
-                    },
-                    'y-sales': {
-                        type: 'linear',
-                        position: 'right',
+                    y: {
                         beginAtZero: true,
-                        ticks: { stepSize: 1 },
-                        grid: { drawOnChartArea: false },
-                    },
+                        ticks: {
+                            callback: function(value) {
+                                return '₱' + formatPrice(value);
+                            }
+                        }
+                    }
                 }
             }
         });
     }
 
-    async function fetchTopSellingProducts(startDate, endDate) {
-        try {
-            const params = new URLSearchParams();
-            if (startDate && endDate) {
-                params.append('startDate', startDate);
-                params.append('endDate', endDate);
-            }
-            const { data: topProducts } = await fetchWithAuth(`/api/reports/top-selling?${params.toString()}`);
-            renderTopSellingProducts(topProducts);
-        } catch (error) {
-            console.error('Failed to fetch top selling products:', error);
-            topSellingContainer.innerHTML = '<p>Error loading report.</p>';
-        }
-    }
-
-    function renderTopSellingProducts(products) {
-        if (!products || products.length === 0) {
-            topSellingContainer.innerHTML = '<p>No sales data for this period.</p>';
+    function renderTopSellingReport(data, element) {
+        element.innerHTML = '';
+        if (data.length === 0) {
+            element.innerHTML = '<li>No top selling products for this period.</li>';
             return;
         }
-        const list = document.createElement('ol');
-        list.className = 'top-selling-list';
-        products.forEach(product => {
-            const item = document.createElement('li');
-            const nameSpan = document.createElement('span');
-            nameSpan.textContent = product.name;
-            item.innerHTML = `<strong>${product.total_sold} sold</strong>`;
-            item.prepend(nameSpan);
-            list.appendChild(item);
+        data.forEach(row => {
+            const li = document.createElement('li');
+            li.innerHTML = `<span>${row.name}</span> <strong>${row.total_sold} sold</strong>`;
+            element.appendChild(li);
         });
-        topSellingContainer.innerHTML = '';
-        topSellingContainer.appendChild(list);
     }
 
-    async function fetchCashierPerformance(startDate, endDate) {
-        try {
-            const params = new URLSearchParams();
-            if (startDate && endDate) {
-                params.append('startDate', startDate);
-                params.append('endDate', endDate);
-            }
-            const { data: performanceData } = await fetchWithAuth(`/api/reports/cashier-performance?${params.toString()}`);
-            renderCashierPerformance(performanceData);
-        } catch (error) {
-            console.error('Failed to fetch cashier performance:', error);
-            cashierPerformanceContainer.innerHTML = '<p>Error loading report.</p>';
-        }
-    }
-
-    function renderCashierPerformance(data) {
-        if (!data || data.length === 0) {
-            cashierPerformanceContainer.innerHTML = '<p>No sales data for this period.</p>';
+    function renderCashierPerformanceReport(data, element) {
+        const tbody = element.querySelector('tbody');
+        tbody.innerHTML = '';
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="no-results">No cashier data for this period.</td></tr>';
             return;
         }
-        const table = document.createElement('table');
-        table.className = 'report-table';
-        table.innerHTML = `
-            <thead>
-                <tr><th>Cashier</th><th>Sales</th><th>Revenue</th></tr>
-            </thead>
-            <tbody>
-                ${data.map(row => `<tr><td>${escapeHtml(row.username)}</td><td>${row.number_of_sales}</td><td>₱${row.total_revenue.toFixed(2)}</td></tr>`).join('')}
-            </tbody>`;
-        cashierPerformanceContainer.innerHTML = '';
-        cashierPerformanceContainer.appendChild(table);
-    }
-
-    async function fetchLowStockAlerts() {
-        try {
-            const { data: lowStockProducts } = await fetchWithAuth('/api/reports/low-stock');
-            renderLowStockAlerts(lowStockProducts);
-        } catch (error) {
-            console.error('Failed to fetch low stock alerts:', error);
-            lowStockContainer.innerHTML = '<p>Error loading alerts.</p>';
-        }
-    }
-
-    function renderLowStockAlerts(products) {
-        if (!products || products.length === 0) {
-            lowStockContainer.innerHTML = '<p>No products with low stock.</p>';
-            return;
-        }
-
-        const list = document.createElement('ul');
-        list.className = 'low-stock-list';
-        products.forEach(product => {
-            const item = document.createElement('li');
-            const link = document.createElement('a');
-            link.href = '/manage-products';
-            link.textContent = product.name;
-            item.innerHTML = `<span class="stock-level">${product.quantity} left</span>`;
-            item.prepend(link);
-            list.appendChild(item);
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${row.username}</td>
+                <td>${row.number_of_sales}</td>
+                <td>₱${formatPrice(row.total_revenue)}</td>
+            `;
+            tbody.appendChild(tr);
         });
-        lowStockContainer.innerHTML = '';
-        lowStockContainer.appendChild(list);
     }
 
-    function exportReportToCsv(reportData) {
-        const headers = ['Date', 'Sales Count', 'Items Sold', 'Total Revenue'];
-        const csvRows = [headers.join(',')];
-        for (const row of reportData) {
-            const values = [new Date(row.report_date).toLocaleDateString(), row.number_of_sales, row.total_items_sold, row.total_revenue.toFixed(2)];
-            csvRows.push(values.join(','));
-        }
-        const csvString = csvRows.join('\n');
+    reportDateFilter.addEventListener('submit', (e) => {
+        e.preventDefault();
+        fetchAllReports();
+    });
+
+    function downloadCsv(csvString, fileName) {
         const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        link.setAttribute('download', `daily-sales-report-${new Date().toISOString().split('T')[0]}.csv`);
+        link.setAttribute('download', fileName);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
     }
 
-    // Helper to prevent HTML injection
-    function escapeHtml(unsafe) {
-        return unsafe
-             .replace(/&/g, "&amp;")
-             .replace(/</g, "&lt;")
-             .replace(/>/g, "&gt;")
-             .replace(/"/g, "&quot;")
-             .replace(/'/g, "&#039;");
-    }
-
-    // --- User Management ---
-    async function fetchUsersForManagement() {
-        try {
-            const { data: users } = await fetchWithAuth('/api/users');
-            renderUsersForManagement(users);
-        } catch (error) {
-            console.error('Failed to fetch users:', error);
-            userManagementList.innerHTML = '<p>Error loading users.</p>';
-        }
-    }
-
-    function renderUsersForManagement(users) {
-        userManagementList.innerHTML = '';
-        if (!users || users.length === 0) {
-            userManagementList.innerHTML = '<p>No users found.</p>';
+    function exportDailyReportToCsv() {
+        if (currentDailyReportData.length === 0) {
+            alert('No data to export.');
             return;
         }
-        users.forEach(user => {
-            const userEl = document.createElement('div');
-            userEl.className = 'user-mgmt-item';
-            const isCurrentUser = user.username === welcomeUser.textContent;
-            
-            const userInfo = document.createElement('div');
-            const usernameStrong = document.createElement('strong');
-            usernameStrong.textContent = user.username;
-            userInfo.appendChild(usernameStrong);
 
-            const userActions = document.createElement('div');
-            userActions.className = 'user-mgmt-actions';
-            userActions.innerHTML = `<select class="role-select" data-id="${user.id}" ${isCurrentUser ? 'disabled title="Cannot change your own role"' : ''}><option value="cashier" ${user.role === 'cashier' ? 'selected' : ''}>Cashier</option><option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option></select><button class="change-password-btn" data-id="${user.id}" data-username="${user.username}">Change Password</button><button class="delete-user-btn" data-id="${user.id}" ${isCurrentUser ? 'disabled title="You cannot delete yourself"' : ''}>Delete</button>`;
+        const headers = ['Date', 'NumberOfSales', 'ItemsSold', 'AverageSale', 'TotalRevenue'];
+        const csvRows = [headers.join(',')];
 
-            userEl.append(userInfo, userActions);
-            userManagementList.appendChild(userEl);
-        });
+        for (const row of currentDailyReportData) {
+            const avgSale = row.number_of_sales > 0 ? (row.total_revenue / row.number_of_sales).toFixed(2) : '0.00';
+            const values = [
+                row.report_date,
+                row.number_of_sales,
+                row.total_items_sold,
+                avgSale,
+                row.total_revenue
+            ];
+            csvRows.push(values.join(','));
+        }
 
-        userManagementList.querySelectorAll('.user-mgmt-actions button').forEach(button => {
-            button.addEventListener('click', (e) => {
-                const userId = e.target.dataset.id;
-                if (e.target.classList.contains('change-password-btn')) {
-                    const username = e.target.dataset.username;
-                    openChangePasswordModal(userId, username);
-                } else if (e.target.classList.contains('delete-user-btn')) {
-                    deleteUser(userId);
-                }
-            });
-        });
-
-        userManagementList.querySelectorAll('.role-select').forEach(select => {
-            select.addEventListener('change', async (e) => {
-                const userId = e.target.dataset.id;
-                const newRole = e.target.value;
-                if (confirm(`Are you sure you want to change this user's role to ${newRole}?`)) {
-                    try {
-                        await fetchWithAuth(`/api/users/${userId}/role`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ newRole }),
-                        });
-                    } catch (error) {
-                        alert(`Failed to update role: ${error.message}`);
-                        fetchUsersForManagement(); // Re-fetch to revert the dropdown on error
-                    }
-                } else {
-                    // If user cancels, revert the dropdown
-                    fetchUsersForManagement();
-                }
-            });
-        });
+        const fileName = `daily-sales-report_${startDateInput.value}_to_${endDateInput.value}.csv`;
+        downloadCsv(csvRows.join('\n'), fileName);
     }
 
-    async function deleteUser(userId) {
-        if (confirm('Are you sure you want to permanently delete this user? This action cannot be undone.')) {
-            try {
-                await fetchWithAuth(`/api/users/${userId}`, { method: 'DELETE' });
-                fetchUsersForManagement();
-            } catch (error) {
-                alert(`Failed to delete user: ${error.message}`);
+    exportCsvBtn.addEventListener('click', exportDailyReportToCsv);
+
+    // --- Low Stock Report ---
+    async function fetchLowStock() {
+        const listEl = document.getElementById('low-stock-list');
+        try {
+            const response = await fetch('/api/reports/low-stock?threshold=10');
+            if (!response.ok) throw new Error('Failed to fetch low stock');
+            const { data } = await response.json();
+            listEl.innerHTML = '';
+            if (data.length === 0) {
+                listEl.innerHTML = '<li>All products are well-stocked!</li>';
+                return;
             }
+            data.forEach(product => {
+                const li = document.createElement('li');
+                li.innerHTML = `<a href="/manage-products#product-${product.id}">${product.name}</a> <span class="stock-level">${product.quantity} left</span>`;
+                listEl.appendChild(li);
+            });
+        } catch (error) {
+            console.error('Error fetching low stock:', error);
+            listEl.innerHTML = '<li>Error loading stock levels.</li>';
         }
     }
 
-    // --- Modals ---
-    function createAddUserModal() {
-        const modalHTML = `
-            <div id="add-user-modal" class="modal-overlay" style="display: none;">
-                <div class="modal-content">
-                    <button class="modal-close-btn">&times;</button>
-                    <h2>Add New User</h2>
-                    <form id="add-user-form">
-                        <div class="form-group">
-                            <label for="new-username">Username</label>
-                            <input type="text" id="new-username" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="new-user-password">Password</label>
-                            <input type="password" id="new-user-password" required minlength="8">
-                        </div>
-                        <div class="form-group">
-                            <label for="new-user-role">Role</label>
-                            <select id="new-user-role" required>
-                                <option value="cashier" selected>Cashier</option>
-                                <option value="admin">Admin</option>
-                            </select>
-                        </div>
-                        <button type="submit" class="btn-primary">Create User</button>
-                    </form>
-                </div>
-            </div>
-        `;
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    // Initial data fetch
+    checkSession();
+    connectWebSocket();
+    fetchDashboardSummary();
+    fetchSalesHistory();
+    fetchAllReports();
+    fetchLowStock();
 
-        const modal = document.getElementById('add-user-modal');
-        modal.querySelector('.modal-close-btn').addEventListener('click', () => modal.style.display = 'none');
-        modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-
-        document.getElementById('add-user-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const username = document.getElementById('new-username').value;
-            const password = document.getElementById('new-user-password').value;
-            const role = document.getElementById('new-user-role').value;
-            await createUser(username, password, role);
-            modal.style.display = 'none';
-        });
-    }
-
-    function createEditModal() {
-        const modalHTML = `
-            <div id="edit-product-modal" class="modal-overlay" style="display: none;">
-                <div class="modal-content">
-                    <button class="modal-close-btn">&times;</button>
-                    <h2>Edit Product</h2>
-                    <form id="edit-product-form">
-                        <input type="hidden" id="edit-product-id">
-                        <div class="form-group"><label for="edit-product-name">Product Name</label><input type="text" id="edit-product-name" required></div>
-                        <div class="form-group"><label for="edit-product-price">Price</label><input type="number" id="edit-product-price" step="0.01" required></div>
-                        <div class="form-group"><label for="edit-product-barcode">Barcode</label><input type="text" id="edit-product-barcode"></div>
-                        <button type="submit" class="btn-primary">Save Changes</button>
-                    </form>
-                </div>
-            </div>`;
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-        const modal = document.getElementById('edit-product-modal');
-        modal.querySelector('.modal-close-btn').addEventListener('click', () => modal.style.display = 'none');
-        modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-        document.getElementById('edit-product-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = document.getElementById('edit-product-id').value;
-            const name = document.getElementById('edit-product-name').value;
-            const price = parseFloat(document.getElementById('edit-product-price').value);
-            const barcode = document.getElementById('edit-product-barcode').value;
-            try {
-                await fetchWithAuth(`/api/products/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, price, barcode }) });
-                modal.style.display = 'none';
-                fetchProductsForManagement();
-            } catch (error) {
-                console.error('Error updating product:', error);
-            }
-        });
-    }
-
-    function openEditModal(productId) {
-        const product = allProducts.find(p => p.id == productId);
-        if (!product) return;
-        document.getElementById('edit-product-id').value = product.id;
-        document.getElementById('edit-product-name').value = product.name;
-        document.getElementById('edit-product-price').value = product.price;
-        document.getElementById('edit-product-barcode').value = product.barcode;
-        document.getElementById('edit-product-modal').style.display = 'flex';
-    }
-
-    function createChangePasswordModal() {
-        const modalHTML = `
-            <div id="change-password-modal" class="modal-overlay" style="display: none;">
-                <div class="modal-content">
-                    <button class="modal-close-btn">&times;</button>
-                    <h2>Change Password for <span id="change-password-username"></span></h2>
-                    <form id="change-password-form">
-                        <input type="hidden" id="change-password-userid">
-                        <div class="form-group"><label for="new-password">New Password</label><input type="password" id="new-password" required minlength="8"></div>
-                        <button type="submit" class="btn-primary">Update Password</button>
-                    </form>
-                </div>
-            </div>`;
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-        const modal = document.getElementById('change-password-modal');
-        modal.querySelector('.modal-close-btn').addEventListener('click', () => modal.style.display = 'none');
-        modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-        document.getElementById('change-password-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const userId = document.getElementById('change-password-userid').value;
-            const newPassword = document.getElementById('new-password').value;
-            try {
-                await fetchWithAuth(`/api/users/${userId}/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newPassword }) });
-                alert('Password updated successfully.');
-                modal.style.display = 'none';
-            } catch (error) {
-                alert(`Failed to update password: ${error.message}`);
-            }
-        });
-    }
-
-    function openChangePasswordModal(userId, username) {
-        document.getElementById('change-password-userid').value = userId;
-        document.getElementById('change-password-username').textContent = username;
-        document.getElementById('change-password-form').reset();
-        document.getElementById('change-password-modal').style.display = 'flex';
-    }
-
-    // Debounce function
-    function debounce(func, delay) {
-        let timeout;
-        return function(...args) {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => func.apply(this, args), delay);
-        };
-    }
-
-    // --- EVENT LISTENERS ---
-    logoutBtn.addEventListener('click', async () => {
-        await fetchWithAuth('/api/users/logout', { method: 'POST' });
-        window.location.href = '/login';
-    });
-
-    const debouncedSearch = debounce((searchTerm) => fetchSalesHistory(1, searchTerm), 300);
-    salesHistorySearch.addEventListener('input', (e) => debouncedSearch(e.target.value));
-
-    filterReportBtn.addEventListener('click', () => {
-        const startDate = startDateInput.value;
-        const endDate = endDateInput.value;
-        if (startDate && endDate) {
-            fetchDailySalesReport(startDate, endDate);
-            resetFilterBtn.style.display = 'inline-block';
-        } else {
-            alert('Please select both a start and end date.');
-        }
-    });
-
-    resetFilterBtn.addEventListener('click', () => {
-        startDateInput.value = '';
-        endDateInput.value = '';
-        fetchDailySalesReport();
-        resetFilterBtn.style.display = 'none';
-    });
-
-    // --- Initial Load ---
-    async function initializeDashboard() {
-        await checkSession();
-        connectWebSocket();
-        fetchDailySalesReport();
-        fetchLowStockAlerts();
-        fetchSalesHistory();
-    }
-
-    initializeDashboard();
+    // Set "Today" as the default active filter
+    document.querySelector('.quick-filter-btn[data-range="today"]').classList.add('active');
 });

@@ -1,16 +1,27 @@
+// public/js/manage-products.js
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Element Cache ---
+    const productList = document.getElementById('product-management-list');
     const addProductForm = document.getElementById('add-product-form');
-    const productManagementList = document.getElementById('product-management-list');
-    const productMgmtSearch = document.getElementById('product-mgmt-search');
+    const searchInput = document.getElementById('product-search');
     const logoutBtn = document.getElementById('logout-btn');
     const welcomeUser = document.getElementById('welcome-user');
     const statusIndicator = document.getElementById('status-indicator');
     const statusText = document.getElementById('status-text');
 
+    // --- Modal Elements ---
+    const modalOverlay = document.getElementById('edit-product-modal');
+    const modalContent = document.querySelector('.modal-content');
+    const closeModalBtn = document.getElementById('modal-close-btn');
+    const editProductForm = document.getElementById('edit-product-form');
+    const editProductId = document.getElementById('edit-product-id');
+    const editProductName = document.getElementById('edit-product-name');
+    const editProductPrice = document.getElementById('edit-product-price');
+    const editProductBarcode = document.getElementById('edit-product-barcode');
+    const editProductQuantity = document.getElementById('edit-product-quantity');
+
     let allProducts = [];
 
-    // --- WebSocket Setup ---
+    // --- WebSocket & Session Logic ---
     function connectWebSocket() {
         const ws = new WebSocket(`ws://${window.location.host}`);
 
@@ -19,14 +30,14 @@ document.addEventListener('DOMContentLoaded', () => {
             statusIndicator.classList.remove('disconnected');
             statusIndicator.classList.add('connected');
             statusText.textContent = 'Live';
-            fetchProductsForManagement(); // Fetch latest on connect
         };
 
         ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
+            // Refresh product list if another admin makes a change
             if (message.type === 'PRODUCTS_UPDATED') {
-                console.log('Products updated, refreshing management list...');
-                fetchProductsForManagement();
+                console.log('Products updated, refreshing list...');
+                fetchProducts();
             }
         };
 
@@ -45,236 +56,220 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // --- Centralized API Fetching with Auth Handling ---
-    async function fetchWithAuth(url, options = {}) {
-        const response = await fetch(url, options);
-        if (response.status === 401) {
-            window.location.href = '/login';
-            throw new Error('Session expired. Redirecting to login.');
-        }
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    }
-
-    // --- Auth & Session ---
     async function checkSession() {
         try {
-            const { user } = await fetchWithAuth('/api/users/session');
+            const response = await fetch('/api/users/session');
+            if (!response.ok) throw new Error('Not authenticated');
+            const { user } = await response.json();
             welcomeUser.textContent = user.username;
         } catch (error) {
-            window.location.href = '/login';
+            window.location.href = '/login'; // Redirect if not logged in
         }
     }
 
-    // --- Product Management ---
-    async function fetchProductsForManagement() {
-        try {
-            const { data } = await fetchWithAuth('/api/products');
-            allProducts = data;
-            renderProductsForManagement(allProducts);
-        } catch (error) {
-            console.error('Failed to fetch products:', error);
-        }
-    }
-
-    function renderProductsForManagement(products) {
-        productManagementList.innerHTML = '';
-        if (products.length === 0) {
-            productManagementList.innerHTML = '<p class="no-results">No products found.</p>';
-            return;
-        }
-        products.forEach(product => {
-            const itemEl = document.createElement('div');
-            itemEl.className = 'product-mgmt-item';
-            itemEl.tabIndex = 0;
-
-            const productInfo = document.createElement('div');
-            const nameStrong = document.createElement('strong');
-            nameStrong.textContent = product.name;
-            const priceP = document.createElement('p');
-            priceP.textContent = `₱${product.price.toFixed(2)}`;
-            const stockP = document.createElement('p');
-            stockP.className = 'product-stock';
-            stockP.textContent = `Stock: ${product.quantity}`;
-            productInfo.append(nameStrong, priceP, stockP);
-
-            const productActions = document.createElement('div');
-            productActions.className = 'product-mgmt-actions';
-            productActions.innerHTML = `<button class="edit-btn action-btn" data-id="${product.id}">Edit</button><button class="adjust-stock-btn action-btn" data-id="${product.id}" data-name="${product.name}" data-quantity="${product.quantity}">Adjust Stock</button><button class="delete-btn action-btn" data-id="${product.id}">Delete</button>`;
-
-            itemEl.append(productInfo, productActions);
-            productManagementList.appendChild(itemEl);
-        });
-    }
-
-    async function addProduct(name, price, barcode) {
-        try {
-            const quantity = document.getElementById('product-quantity').value;
-            await fetchWithAuth('/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, price, barcode, quantity }) });
-            addProductForm.reset();
-            fetchProductsForManagement();
-        } catch (error) {
-            alert(`Failed to add product: ${error.message}`);
-        }
-    }
-
-    async function deleteProduct(productId, elementToDelete) {
-        if (confirm('Are you sure you want to delete this product?')) {
-            try {
-                const nextFocusElement = elementToDelete.nextElementSibling || elementToDelete.previousElementSibling;
-                await fetchWithAuth(`/api/products/${productId}`, { method: 'DELETE' });
-                await fetchProductsForManagement();
-                if (nextFocusElement && productManagementList.contains(nextFocusElement)) {
-                    nextFocusElement.focus();
-                } else {
-                    productManagementList.querySelector('.product-mgmt-item')?.focus();
-                }
-            } catch (error) {
-                console.error('Error deleting product:', error);
-            }
-        }
-    }
-
-    // --- Stock Adjustment Modal ---
-    function createAdjustStockModal() {
-        const modalHTML = `
-            <div id="adjust-stock-modal" class="modal-overlay" style="display: none;">
-                <div class="modal-content">
-                    <button class="modal-close-btn">&times;</button>
-                    <h2>Adjust Stock for <span id="adjust-stock-product-name"></span></h2>
-                    <p>Current Stock: <strong id="current-stock-level"></strong></p>
-                    <form id="adjust-stock-form">
-                        <input type="hidden" id="adjust-stock-product-id">
-                        <div class="form-group">
-                            <label for="stock-adjustment">Adjustment</label>
-                            <input type="number" id="stock-adjustment" placeholder="e.g., 5 or -2" required>
-                            <small>Enter a positive number to add stock, or a negative number to remove it.</small>
-                        </div>
-                        <button type="submit" class="btn-primary btn-block">Apply Adjustment</button>
-                    </form>
-                </div>
-            </div>`;
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-
-        const modal = document.getElementById('adjust-stock-modal');
-        modal.querySelector('.modal-close-btn').addEventListener('click', () => modal.style.display = 'none');
-        modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-
-        document.getElementById('adjust-stock-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = document.getElementById('adjust-stock-product-id').value;
-            const adjustment = parseInt(document.getElementById('stock-adjustment').value, 10);
-
-            try {
-                await fetchWithAuth(`/api/products/${id}/adjust-stock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adjustment }) });
-                modal.style.display = 'none';
-                fetchProductsForManagement();
-            } catch (error) {
-                alert(`Failed to adjust stock: ${error.message}`);
-            }
-        });
-    }
-
-    function openAdjustStockModal(productId, productName, currentQuantity) {
-        document.getElementById('adjust-stock-product-id').value = productId;
-        document.getElementById('adjust-stock-product-name').textContent = productName;
-        document.getElementById('current-stock-level').textContent = currentQuantity;
-        document.getElementById('adjust-stock-form').reset();
-        document.getElementById('adjust-stock-modal').style.display = 'flex';
-    }
-
-    // --- Modals ---
-    function createEditModal() {
-        const modalHTML = `
-            <div id="edit-product-modal" class="modal-overlay" style="display: none;">
-                <div class="modal-content">
-                    <button class="modal-close-btn">&times;</button>
-                    <h2>Edit Product</h2>
-                    <form id="edit-product-form">
-                        <input type="hidden" id="edit-product-id">
-                        <div class="form-group"><label for="edit-product-name">Product Name</label><input type="text" id="edit-product-name" required></div>
-                        <div class="form-group"><label for="edit-product-price">Price</label><input type="number" id="edit-product-price" step="0.01" required></div>
-                        <div class="form-group"><label for="edit-product-barcode">Barcode</label><input type="text" id="edit-product-barcode"></div>
-                        <div class="form-group"><label for="edit-product-quantity">Stock Quantity</label><input type="number" id="edit-product-quantity" min="0" required></div>
-                        <button type="submit" class="btn-primary btn-block">Save Changes</button>
-                    </form>
-                </div>
-            </div>`;
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-        const modal = document.getElementById('edit-product-modal');
-        modal.querySelector('.modal-close-btn').addEventListener('click', () => modal.style.display = 'none');
-        modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-        document.getElementById('edit-product-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = document.getElementById('edit-product-id').value;
-            const name = document.getElementById('edit-product-name').value;
-            const price = parseFloat(document.getElementById('edit-product-price').value);
-            const barcode = document.getElementById('edit-product-barcode').value;
-            const quantity = parseInt(document.getElementById('edit-product-quantity').value, 10);
-            try {
-                await fetchWithAuth(`/api/products/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, price, barcode, quantity }) });
-                modal.style.display = 'none';
-                fetchProductsForManagement();
-            } catch (error) {
-                console.error('Error updating product:', error);
-            }
-        });
-    }
-
-    function openEditModal(productId) {
-        const product = allProducts.find(p => p.id == productId);
-        if (!product) return;
-        document.getElementById('edit-product-id').value = product.id;
-        document.getElementById('edit-product-name').value = product.name;
-        document.getElementById('edit-product-price').value = product.price;
-        document.getElementById('edit-product-barcode').value = product.barcode;
-        document.getElementById('edit-product-quantity').value = product.quantity;
-        document.getElementById('edit-product-modal').style.display = 'flex';
-    }
-
-    // --- EVENT LISTENERS ---
     logoutBtn.addEventListener('click', async () => {
         await fetch('/api/users/logout', { method: 'POST' });
         window.location.href = '/login';
     });
 
-    addProductForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const name = document.getElementById('product-name').value;
-        const price = parseFloat(document.getElementById('product-price').value);
-        const barcode = document.getElementById('product-barcode').value;
-        addProduct(name, price, barcode);
-    });
+    async function fetchProducts() {
+        try {
+            const response = await fetch('/api/products');
+            if (!response.ok) throw new Error('Failed to fetch products');
+            const { data } = await response.json();
+            allProducts = data;
+            displayProducts(allProducts);
+        } catch (error) {
+            console.error('Error fetching products:', error);
+            productList.innerHTML = '<p class="no-results">Error loading products.</p>';
+        }
+    }
 
-    productManagementList.addEventListener('click', (e) => {
-        const target = e.target;
-        const itemElement = target.closest('.product-mgmt-item');
-        if (!itemElement) return;
-        const productId = itemElement.querySelector('.edit-btn').dataset.id;
-        if (target.classList.contains('delete-btn')) {
-            deleteProduct(productId, itemElement);
-        } else if (target.classList.contains('edit-btn')) {
-            openEditModal(productId);
-        } else if (target.classList.contains('adjust-stock-btn')) {
-            const productName = target.dataset.name;
-            const currentQuantity = target.dataset.quantity;
-            openAdjustStockModal(productId, productName, currentQuantity);
+    function displayProducts(products) {
+        productList.innerHTML = '';
+        if (products.length === 0) {
+            productList.innerHTML = '<p class="no-results">No products found.</p>';
+            return;
+        }
+
+        products.forEach(product => {
+            const item = document.createElement('div');
+            item.className = 'product-mgmt-item';
+            item.id = `product-${product.id}`;
+            item.dataset.productId = product.id;
+            item.tabIndex = 0;
+
+            item.innerHTML = `
+                <div>
+                    <p>${product.name}</p>
+                    <small>Price: ₱${formatPrice(product.price)} | Barcode: ${product.barcode || 'N/A'}</small>
+                </div>
+                <div class="product-mgmt-actions">
+                    <span class="product-stock">Stock: ${product.quantity}</span>
+                    <button class="edit-btn action-btn" data-product-id="${product.id}">Edit</button>
+                    <button class="delete-btn action-btn" data-product-id="${product.id}">Delete</button>
+                </div>
+            `;
+            productList.appendChild(item);
+        });
+    }
+
+    // --- Add Product ---
+    addProductForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(addProductForm);
+        const productData = Object.fromEntries(formData.entries());
+
+        try {
+            const response = await fetch('/api/products', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(productData),
+            });
+
+            if (!response.ok) {
+                const { error } = await response.json();
+                throw new Error(error || 'Failed to add product');
+            }
+
+            addProductForm.reset();
+            fetchProducts(); // Refresh the list
+        } catch (error) {
+            console.error('Error adding product:', error);
+            alert(`Error: ${error.message}`);
         }
     });
 
-    productMgmtSearch.addEventListener('input', (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        const filteredProducts = allProducts.filter(p => p.name.toLowerCase().includes(searchTerm) || p.barcode?.includes(searchTerm));
-        renderProductsForManagement(filteredProducts);
+    // --- Search/Filter ---
+    searchInput.addEventListener('input', () => {
+        const searchTerm = searchInput.value.toLowerCase();
+        const filtered = allProducts.filter(p =>
+            p.name.toLowerCase().includes(searchTerm) ||
+            (p.barcode && p.barcode.includes(searchTerm))
+        );
+        displayProducts(filtered);
     });
 
-    // --- Initial Load ---
+    // --- Edit Modal Logic ---
+    function openEditModal(product) {
+        editProductId.value = product.id;
+        editProductName.value = product.name;
+        editProductPrice.value = product.price;
+        editProductBarcode.value = product.barcode || '';
+        editProductQuantity.value = product.quantity;
+        modalOverlay.style.display = 'flex';
+        editProductName.focus();
+    }
+
+    function closeEditModal() {
+        modalOverlay.style.display = 'none';
+    }
+
+    productList.addEventListener('click', async (e) => {
+        const target = e.target;
+        const productId = target.dataset.productId;
+
+        if (target.classList.contains('edit-btn')) {
+            const product = allProducts.find(p => p.id == productId);
+            if (product) {
+                openEditModal(product);
+            }
+        } else if (target.classList.contains('delete-btn')) {
+            if (!productId) return;
+
+            const product = allProducts.find(p => p.id == productId);
+            if (confirm(`Are you sure you want to delete "${product.name}"? This action cannot be undone.`)) {
+                try {
+                    const response = await fetch(`/api/products/${productId}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (!response.ok) {
+                        const { error } = await response.json();
+                        throw new Error(error || 'Failed to delete product');
+                    }
+                    fetchProducts(); // Refresh the list
+                } catch (error) {
+                    alert(`Error: ${error.message}`);
+                }
+            }
+        }
+    });
+
+    closeModalBtn.addEventListener('click', closeEditModal);
+    modalOverlay.addEventListener('click', (e) => {
+        if (e.target === modalOverlay) {
+            closeEditModal();
+        }
+    });
+
+    editProductForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = editProductId.value;
+        const productData = {
+            name: editProductName.value,
+            price: parseFloat(editProductPrice.value),
+            barcode: editProductBarcode.value,
+            quantity: parseInt(editProductQuantity.value, 10),
+        };
+
+        try {
+            const response = await fetch(`/api/products/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(productData),
+            });
+
+            if (!response.ok) {
+                const { error } = await response.json();
+                throw new Error(error || 'Failed to update product');
+            }
+
+            closeEditModal();
+            fetchProducts(); // Refresh list
+        } catch (error) {
+            console.error('Error updating product:', error);
+            alert(`Error: ${error.message}`);
+        }
+    });
+
+    // --- Stock Adjustment ---
+    const adjustStockForm = document.getElementById('adjust-stock-form');
+    adjustStockForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = editProductId.value;
+        const adjustment = parseInt(document.getElementById('stock-adjustment-value').value, 10);
+
+        if (!id || !adjustment) {
+            alert('Please enter a valid adjustment value.');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/products/${id}/adjust-stock`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ adjustment }),
+            });
+
+            if (!response.ok) {
+                const { error } = await response.json();
+                throw new Error(error || 'Failed to adjust stock');
+            }
+
+            // Update quantity in the modal without closing it
+            editProductQuantity.value = parseInt(editProductQuantity.value, 10) + adjustment;
+            document.getElementById('stock-adjustment-value').value = '';
+            fetchProducts(); // Refresh list in the background
+
+        } catch (error) {
+            console.error('Error adjusting stock:', error);
+            alert(`Error: ${error.message}`);
+        }
+    });
+
+    // Initial Load
     checkSession();
     connectWebSocket();
-    createAdjustStockModal();
-    createEditModal();
-    fetchProductsForManagement();
+    fetchProducts();
 });

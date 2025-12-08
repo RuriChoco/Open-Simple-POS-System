@@ -60,6 +60,13 @@ const migrations = [
         script: `
             ALTER TABLE products ADD COLUMN quantity INTEGER NOT NULL DEFAULT 0;
         `
+    },
+    {
+        version: 5,
+        script: `
+            ALTER TABLE sales ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'cash';
+            ALTER TABLE sales ADD COLUMN customer_name TEXT;
+        `
     }
 ];
 const LATEST_VERSION = migrations.length;
