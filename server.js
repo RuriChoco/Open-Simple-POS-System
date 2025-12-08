@@ -1,6 +1,7 @@
 // server.js
 const express = require('express');
 const db = require('./database.js');
+const util = require('util');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
@@ -10,6 +11,12 @@ const app = express();
 const PORT = 3000;
 const saltRounds = 10;
 
+// Promisify db methods for async/await
+const dbAsync = {
+    get: util.promisify(db.get.bind(db)),
+    all: util.promisify(db.all.bind(db)),
+    run: util.promisify(db.run.bind(db)),
+};
 // Middleware
 app.use(express.json()); // To parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // To parse URL-encoded bodies
@@ -19,7 +26,7 @@ app.use(session({
         db: 'sessions.db',
         dir: './'
     }),
-    secret: 'a-very-secret-key-that-should-be-in-env-vars', // In production, use an environment variable
+    secret: process.env.SESSION_SECRET || 'a-very-secret-key-that-should-be-in-env-vars', // In production, use an environment variable
     resave: false,
     saveUninitialized: false,
     cookie: { maxAge: 24 * 60 * 60 * 1000 } // 24 hours
@@ -31,104 +38,143 @@ app.use(express.static(path.join(__dirname, 'public'))); // Serve static files f
 
 // PRODUCTS API
 // GET all products
-app.get('/api/products', (req, res) => {
-    db.all("SELECT * FROM products ORDER BY name", [], (err, rows) => {
-        if (err) {
-            res.status(400).json({ "error": err.message });
-            return;
-        }
+app.get('/api/products', async (req, res, next) => {
+    try {
+        const rows = await dbAsync.all("SELECT * FROM products ORDER BY name", []);
         res.json({ "message": "success", "data": rows });
-    });
+    } catch (err) {
+        next(err); // Pass error to the error handler
+    }
 });
 
 // POST a new product
-app.post('/api/products', isAuthenticated, isAdmin, (req, res) => {
-    const { name, price, barcode } = req.body;
-    const sql = 'INSERT INTO products (name, price, barcode) VALUES (?,?,?)';
-    db.run(sql, [name, price, barcode], function(err) {
-        if (err) {
-            res.status(400).json({ "error": err.message });
-            return;
-        }
-        res.json({ "message": "success", "data": { id: this.lastID, name, price, barcode } });
-    });
+app.post('/api/products', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const { name, price, barcode } = req.body;
+        const sql = 'INSERT INTO products (name, price, barcode) VALUES (?,?,?)';
+        // We need the 'this' context from db.run, so we can't use the promisified version directly here without some adjustments.
+        // Or we can re-query, but for simplicity, let's keep this one as is for now or use a specific promise wrapper.
+        db.run(sql, [name, price, barcode], function(err) {
+            if (err) return next(err);
+            res.json({ "message": "success", "data": { id: this.lastID, name, price, barcode } });
+        });
+    } catch (err) {
+        next(err);
+    }
 });
 
 // DELETE a product
-app.delete('/api/products/:id', isAuthenticated, isAdmin, (req, res) => {
-    const { id } = req.params;
-    db.run('DELETE FROM products WHERE id = ?', id, function(err) {
-        if (err) {
-            res.status(400).json({ "error": res.message });
-            return;
-        }
-        res.json({ message: "deleted", changes: this.changes });
-    });
+app.delete('/api/products/:id', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const result = await dbAsync.run('DELETE FROM products WHERE id = ?', id);
+        res.json({ message: "deleted", changes: result.changes });
+    } catch (err) {
+        next(err);
+    }
 });
 
+// UPDATE a product
+app.put('/api/products/:id', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { name, price, barcode } = req.body;
+
+        if (name === undefined || price === undefined || barcode === undefined) {
+            return res.status(400).json({ "error": "Missing required fields: name, price, and barcode." });
+        }
+
+        const sql = `UPDATE products SET name = ?, price = ?, barcode = ? WHERE id = ?`;
+        const result = await dbAsync.run(sql, [name, price, barcode, id]);
+
+        if (result.changes === 0) {
+            return res.status(404).json({ "error": "Product not found." });
+        }
+        res.json({ message: "Product updated successfully", changes: result.changes });
+    } catch (err) {
+        next(err);
+    }
+});
 
 // SALES API
 // POST a new sale
-app.post('/api/sales', isAuthenticated, async (req, res) => {
+app.post('/api/sales', isAuthenticated, async (req, res, next) => {
     const { total_amount, items } = req.body;
 
     // Basic validation
     if (!items || items.length === 0 || !total_amount) {
         return res.status(400).json({ "error": "Invalid sale data." });
     }
-    
-    // Helper to run database commands with promises
-    const run = (sql, params = []) => new Promise((resolve, reject) => {
-        db.run(sql, params, function (err) {
-            if (err) reject(err);
-            else resolve(this);
-        });
-    });
 
     try {
-        await run('BEGIN TRANSACTION');
+        await dbAsync.run('BEGIN TRANSACTION');
 
-        const saleResult = await run('INSERT INTO sales (total_amount) VALUES (?)', [total_amount]);
+        // Can't use promisified run if we need `this.lastID`
+        const saleResult = await new Promise((resolve, reject) => {
+            db.run('INSERT INTO sales (total_amount) VALUES (?)', [total_amount], function(err) {
+                if (err) reject(err);
+                else resolve(this);
+            });
+        });
         const saleId = saleResult.lastID;
 
         const itemSql = 'INSERT INTO sale_items (sale_id, product_id, quantity, price_at_sale) VALUES (?, ?, ?, ?)';
         for (const item of items) {
-            await run(itemSql, [saleId, item.id, item.quantity, item.price]);
+            await dbAsync.run(itemSql, [saleId, item.id, item.quantity, item.price]);
         }
 
-        await run('COMMIT');
+        await dbAsync.run('COMMIT');
 
         res.json({ "message": "Sale completed successfully!", "saleId": saleId });
 
-    } catch (error) {
-        await run('ROLLBACK');
-        console.error('Transaction failed:', error.message);
-        res.status(500).json({ "error": "Failed to complete sale.", "details": error.message });
+    } catch (err) {
+        await dbAsync.run('ROLLBACK');
+        next(err);
+    }
+});
+
+// GET a single sale by ID
+app.get('/api/sales/:id', isAuthenticated, async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const sql = `
+            SELECT s.id AS sale_id, s.total_amount, s.sale_date, si.quantity, si.price_at_sale, p.name AS product_name
+            FROM sales s
+            JOIN sale_items si ON s.id = si.sale_id
+            JOIN products p ON si.product_id = p.id
+            WHERE s.id = ?
+        `;
+        const rows = await dbAsync.all(sql, [id]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: "Sale not found." });
+        }
+
+        const saleDetails = {
+            sale_id: rows[0].sale_id,
+            total_amount: rows[0].total_amount,
+            sale_date: rows[0].sale_date,
+            items: rows.map(r => ({ product_name: r.product_name, quantity: r.quantity, price_at_sale: r.price_at_sale }))
+        };
+
+        res.json({ message: "success", data: saleDetails });
+
+    } catch (err) {
+        next(err);
     }
 });
 
 // GET sales history
-app.get('/api/sales/history', isAuthenticated, isAdmin, (req, res) => {
-    const sql = `
-        SELECT
-            s.id AS sale_id,
-            s.total_amount,
-            s.sale_date,
-            si.quantity,
-            si.price_at_sale,
-            p.name AS product_name
-        FROM sales s
-        JOIN sale_items si ON s.id = si.sale_id
-        JOIN products p ON si.product_id = p.id
-        ORDER BY s.sale_date DESC, s.id DESC
-    `;
-
-    db.all(sql, [], (err, rows) => {
-        if (err) {
-            res.status(500).json({ "error": err.message });
-            return;
-        }
-
+app.get('/api/sales/history', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const sql = `
+            SELECT s.id AS sale_id, s.total_amount, s.sale_date, si.quantity, si.price_at_sale, p.name AS product_name
+            FROM sales s
+            JOIN sale_items si ON s.id = si.sale_id
+            JOIN products p ON si.product_id = p.id
+            ORDER BY s.sale_date DESC, s.id DESC
+        `;
+        const rows = await dbAsync.all(sql, []);
         // Group items by sale_id
         const sales = {};
         rows.forEach(row => {
@@ -144,66 +190,69 @@ app.get('/api/sales/history', isAuthenticated, isAdmin, (req, res) => {
         });
 
         res.json({ "message": "success", "data": Object.values(sales) });
-    });
+    } catch (err) {
+        next(err);
+    }
 });
 
 // --- USER & AUTH API ---
 
 // Check if an admin account exists
-app.get('/api/users/check-admin', (req, res) => {
-    db.get("SELECT id FROM users WHERE role = 'admin' LIMIT 1", [], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
+app.get('/api/users/check-admin', async (req, res, next) => {
+    try {
+        const row = await dbAsync.get("SELECT id FROM users WHERE role = 'admin' LIMIT 1", []);
         res.json({ adminExists: !!row });
-    });
+    } catch (err) {
+        next(err);
+    }
 });
 
 // Register the first admin
-app.post('/api/users/register-admin', async (req, res) => {
-    db.get("SELECT id FROM users WHERE role = 'admin' LIMIT 1", [], async (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
+app.post('/api/users/register-admin', async (req, res, next) => {
+    try {
+        const row = await dbAsync.get("SELECT id FROM users WHERE role = 'admin' LIMIT 1", []);
         if (row) return res.status(403).json({ error: "An admin account already exists." });
 
         const { username, password } = req.body;
         if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
 
         const hashedPassword = await bcrypt.hash(password, saltRounds);
-        db.run('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, hashedPassword, 'admin'], function(err) {
-            if (err) return res.status(400).json({ error: "Username may already be taken." });
-            res.status(201).json({ message: "Admin account created successfully." });
-        });
-    });
+        await dbAsync.run('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, hashedPassword, 'admin']);
+        res.status(201).json({ message: "Admin account created successfully." });
+    } catch (err) {
+        next(err);
+    }
 });
 
 // Create a cashier account (admin only)
-app.post('/api/users/create-cashier', isAuthenticated, isAdmin, async (req, res) => {
-    const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
+app.post('/api/users/create-cashier', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const { username, password } = req.body;
+        if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
 
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-    db.run('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, hashedPassword, 'cashier'], function(err) {
-        if (err) return res.status(400).json({ error: "Username may already be taken." });
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+        await dbAsync.run('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, hashedPassword, 'cashier']);
         res.status(201).json({ message: "Cashier account created successfully." });
-    });
+    } catch (err) {
+        next(err);
+    }
 });
 
 // Login
-app.post('/api/users/login', (req, res) => {
-    const { username, password } = req.body;
-    db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
-        if (err) return res.status(500).json({ error: err.message });
+app.post('/api/users/login', async (req, res, next) => {
+    try {
+        const { username, password } = req.body;
+        const user = await dbAsync.get('SELECT * FROM users WHERE username = ?', [username]);
         if (!user) return res.status(401).json({ error: "Invalid credentials." });
 
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(401).json({ error: "Invalid credentials." });
 
-        // Store user in session, but not the password
-        req.session.user = {
-            id: user.id,
-            username: user.username,
-            role: user.role
-        };
+        req.session.user = { id: user.id, username: user.username, role: user.role };
         res.json({ message: "Login successful", user: req.session.user });
-    });
+    } catch (err) {
+        next(err);
+    }
 });
 
 // Logout
@@ -248,6 +297,22 @@ function isAdmin(req, res, next) {
     }
 }
 
+// --- Central Error Handler ---
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+
+    // Handle specific SQLite errors, like UNIQUE constraint
+    if (err.code === 'SQLITE_CONSTRAINT') {
+        return res.status(409).json({ error: 'Conflict: A record with that value already exists (e.g., username or barcode).' });
+    }
+
+    // Default to 500 server error
+    res.status(500).json({
+        error: 'An internal server error occurred.',
+        details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+});
+
 // --- Page Routing ---
 
 // Main POS page
@@ -258,6 +323,11 @@ app.get('/', isAuthenticated, (req, res) => {
 // Admin page
 app.get('/admin', isAuthenticated, isAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// Receipt page
+app.get('/receipt/:id', isAuthenticated, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'receipt.html'));
 });
 
 // Login page

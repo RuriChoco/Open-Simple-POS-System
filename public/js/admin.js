@@ -7,6 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const logoutBtn = document.getElementById('logout-btn');
     const welcomeUser = document.getElementById('welcome-user');
 
+    let allProducts = []; // Cache products for editing
+
     // --- Auth & Session ---
     async function checkSession() {
         try {
@@ -33,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/api/products');
             const { data } = await response.json();
+            allProducts = data; // Cache for editing
             productManagementList.innerHTML = ''; // Clear list
             data.forEach(product => {
                 const itemEl = document.createElement('div');
@@ -43,7 +46,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         <strong>${product.name}</strong>
                         <p>₱${product.price.toFixed(2)}</p>
                     </div>
-                    <button class="delete-btn" data-id="${product.id}">Delete</button>
+                    <div class="product-mgmt-actions">
+                        <button class="edit-btn" data-id="${product.id}">Edit</button>
+                        <button class="delete-btn" data-id="${product.id}">Delete</button>
+                    </div>
                 `;
                 productManagementList.appendChild(itemEl);
             });
@@ -91,8 +97,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     productManagementList.addEventListener('click', async (e) => {
-        if (e.target.classList.contains('delete-btn')) {
+        const target = e.target;
+        if (target.classList.contains('delete-btn')) {
             deleteProduct(e.target.dataset.id);
+        } else if (target.classList.contains('edit-btn')) {
+            openEditModal(target.dataset.id);
         }
     });
 
@@ -166,8 +175,82 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Edit Product Modal Logic ---
+    function createEditModal() {
+        const modalHTML = `
+            <div id="edit-product-modal" class="modal-overlay" style="display: none;">
+                <div class="modal-content">
+                    <button class="modal-close-btn">&times;</button>
+                    <h2>Edit Product</h2>
+                    <form id="edit-product-form">
+                        <input type="hidden" id="edit-product-id">
+                        <div class="form-group">
+                            <label for="edit-product-name">Product Name</label>
+                            <input type="text" id="edit-product-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-product-price">Price</label>
+                            <input type="number" id="edit-product-price" step="0.01" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-product-barcode">Barcode</label>
+                            <input type="text" id="edit-product-barcode">
+                        </div>
+                        <button type="submit" class="btn-primary">Save Changes</button>
+                    </form>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+        const modal = document.getElementById('edit-product-modal');
+        modal.querySelector('.modal-close-btn').addEventListener('click', () => modal.style.display = 'none');
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) { // Click on overlay
+                modal.style.display = 'none';
+            }
+        });
+
+        document.getElementById('edit-product-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('edit-product-id').value;
+            const name = document.getElementById('edit-product-name').value;
+            const price = parseFloat(document.getElementById('edit-product-price').value);
+            const barcode = document.getElementById('edit-product-barcode').value;
+
+            try {
+                const response = await fetch(`/api/products/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, price, barcode }),
+                });
+                if (response.ok) {
+                    modal.style.display = 'none';
+                    fetchProductsForManagement();
+                } else {
+                    alert('Failed to update product.');
+                }
+            } catch (error) {
+                console.error('Error updating product:', error);
+            }
+        });
+    }
+
+    function openEditModal(productId) {
+        const product = allProducts.find(p => p.id == productId);
+        if (!product) return;
+
+        document.getElementById('edit-product-id').value = product.id;
+        document.getElementById('edit-product-name').value = product.name;
+        document.getElementById('edit-product-price').value = product.price;
+        document.getElementById('edit-product-barcode').value = product.barcode;
+
+        document.getElementById('edit-product-modal').style.display = 'flex';
+    }
+
     // --- Initial Load ---
     checkSession();
+    createEditModal(); // Create and append the modal to the DOM
     fetchProductsForManagement();
     fetchSalesHistory();
 });

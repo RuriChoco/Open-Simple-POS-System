@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const welcomeUser = document.getElementById('welcome-user');
     const keyboardModeBtn = document.getElementById('keyboard-mode-btn');
     const touchModeBtn = document.getElementById('touch-mode-btn');
+    const printContainer = document.getElementById('receipt-container-print');
 
     let cart = [];
     let allProducts = []; // Cache all products to avoid re-fetching
@@ -154,6 +155,54 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function renderReceiptForPrinting(saleId, saleData) {
+        const saleDate = new Date().toLocaleString();
+
+        let itemsHtml = '';
+        saleData.items.forEach(item => {
+            itemsHtml += `
+                <tr>
+                    <td class="item-col">${item.name}</td>
+                    <td class="qty-col">${item.quantity}</td>
+                    <td class="price-col">₱${(item.price * item.quantity).toFixed(2)}</td>
+                </tr>
+            `;
+        });
+
+        printContainer.innerHTML = `
+            <div class="receipt-container">
+                <header>
+                    <h1>Sale Receipt</h1>
+                    <p>Your Store Name</p>
+                </header>
+                <main id="receipt-details">
+                    <div class="receipt-info">
+                        <p><strong>Sale ID:</strong> ${saleId}</p>
+                        <p><strong>Date:</strong> ${saleDate}</p>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="item-col">Item</th>
+                                <th class="qty-col">Qty</th>
+                                <th class="price-col">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsHtml}
+                        </tbody>
+                    </table>
+                    <div class="total-section">
+                        Total: ₱${saleData.total_amount.toFixed(2)}
+                    </div>
+                </main>
+                <footer>
+                    <p>Thank you for your purchase!</p>
+                </footer>
+            </div>
+        `;
+    }
+
     async function completeSale() {
         if (cart.length === 0) {
             alert('Cart is empty!');
@@ -174,7 +223,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const result = await response.json();
-            alert(`Sale completed successfully! Sale ID: ${result.saleId}`);
+
+            if (confirm(`Sale completed successfully! Print receipt?`)) {
+                // Render receipt into the hidden div and print
+                renderReceiptForPrinting(result.saleId, { total_amount: totalAmount, items: cart });
+                window.print();
+                printContainer.innerHTML = ''; // Clear after printing
+            }
+
             cart = []; // Clear cart
             updateCart(); // Update UI
             searchInput.focus(); // Return focus to search for next transaction
