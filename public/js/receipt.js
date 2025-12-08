@@ -44,6 +44,7 @@ function renderReceipt(sale) {
     receiptDetails.innerHTML = `
         <div class="receipt-info">
             <p><strong>Sale ID:</strong> ${sale.sale_id}</p>
+            <p><strong>Cashier:</strong> ${sale.cashier_name}</p>
             <p><strong>Date:</strong> ${saleDate}</p>
         </div>
         <table>

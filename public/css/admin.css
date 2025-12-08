@@ -93,12 +93,36 @@ input:focus {
 
 .sale-history-item summary {
     display: flex;
+    align-items: center;
     justify-content: space-between;
     padding: 1rem;
     cursor: pointer;
     font-weight: 500;
 }
 
+.summary-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.sale-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.reprint-btn {
+    width: auto !important;
+    padding: 0.4rem 0.8rem !important;
+    background-color: var(--secondary-color) !important;
+    color: white !important;
+}
+
+.void-btn {
+    width: auto !important; /* Override general button styles */
+    padding: 0.4rem 0.8rem !important;
+    background-color: var(--danger-color) !important;
+}
 .sale-history-item summary:hover {
     background-color: var(--light-color);
 }
@@ -111,6 +135,108 @@ input:focus {
     padding: 1rem 1rem 1rem 3rem;
     list-style-type: disc;
 }
+
+.no-results {
+    text-align: center;
+    color: var(--secondary-color);
+    padding: 2rem 0;
+    font-style: italic;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.card-header button {
+    width: auto;
+    padding: 0.5rem 1rem;
+}
+
+.pagination-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.pagination-controls button {
+    width: auto;
+    padding: 0.5rem 1rem;
+}
+
+.report-filters {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 1rem;
+    background-color: var(--light-color);
+    border-radius: var(--border-radius);
+    margin-bottom: 2rem;
+}
+
+.report-filters label {
+    font-weight: 500;
+}
+
+.report-filters input[type="date"] {
+    padding: 0.5rem;
+    width: auto;
+}
+
+.pagination-controls span {
+    font-weight: 500;
+}
+
+/* Report Table Styles */
+.report-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+.report-table th,
+.report-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.report-table th {
+    background-color: var(--light-color);
+    font-weight: 600;
+}
+
+.report-table td:nth-child(n+2), .report-table th:nth-child(n+2) { text-align: right; }
+
+.chart-container {
+    position: relative;
+    height: 300px;
+    width: 100%;
+    margin-bottom: 2rem;
+}
+
+/* Top Selling Products List */
+.top-selling-list {
+    list-style-position: inside;
+    padding-left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.top-selling-list li {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--light-color);
+}
+
 
 /* Responsive */
 @media (max-width: 992px) {

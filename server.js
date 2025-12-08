@@ -100,6 +100,7 @@ app.put('/api/products/:id', isAuthenticated, isAdmin, async (req, res, next) =>
 // POST a new sale
 app.post('/api/sales', isAuthenticated, async (req, res, next) => {
     const { total_amount, items } = req.body;
+    const userId = req.session.user.id;
 
     // Basic validation
     if (!items || items.length === 0 || !total_amount) {
@@ -111,7 +112,7 @@ app.post('/api/sales', isAuthenticated, async (req, res, next) => {
 
         // Can't use promisified run if we need `this.lastID`
         const saleResult = await new Promise((resolve, reject) => {
-            db.run('INSERT INTO sales (total_amount) VALUES (?)', [total_amount], function(err) {
+            db.run('INSERT INTO sales (user_id, total_amount) VALUES (?, ?)', [userId, total_amount], function(err) {
                 if (err) reject(err);
                 else resolve(this);
             });
@@ -133,15 +134,191 @@ app.post('/api/sales', isAuthenticated, async (req, res, next) => {
     }
 });
 
+// DELETE a sale (void)
+app.delete('/api/sales/:id', isAuthenticated, isAdmin, async (req, res, next) => {
+    const { id } = req.params;
+    try {
+        await dbAsync.run('BEGIN TRANSACTION');
+        // Delete items from the sale first
+        await dbAsync.run('DELETE FROM sale_items WHERE sale_id = ?', id);
+        // Then delete the sale itself
+        const result = await dbAsync.run('DELETE FROM sales WHERE id = ?', id);
+        await dbAsync.run('COMMIT');
+
+        if (result.changes === 0) {
+            return res.status(404).json({ error: "Sale not found to void." });
+        }
+
+        res.json({ message: "Sale voided successfully." });
+    } catch (err) {
+        await dbAsync.run('ROLLBACK');
+        next(err);
+    }
+});
+
+// GET sales history
+app.get('/api/sales/history', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+        const search = req.query.search || '';
+
+        let whereClause = '';
+        const params = [];
+
+        if (search) {
+            // Assuming search is by sale ID
+            whereClause = 'WHERE s.id = ?';
+            params.push(search);
+        }
+
+        // Get total number of sales for pagination
+        const totalResult = await dbAsync.get(`SELECT COUNT(s.id) as count FROM sales s ${whereClause}`, params);
+        const totalSales = totalResult.count;
+        const totalPages = Math.ceil(totalSales / limit);
+
+        // Get paginated sales
+        const queryParams = [...params, limit, offset];
+        const salesRows = await dbAsync.all(`
+            SELECT s.id, s.total_amount, s.sale_date, u.username as cashier_name 
+            FROM sales s
+            LEFT JOIN users u ON s.user_id = u.id
+            ${whereClause} 
+            ORDER BY s.sale_date DESC, s.id DESC 
+            LIMIT ? OFFSET ?`, queryParams);
+
+        if (salesRows.length === 0) {
+            // If there are no sales on this page, return an empty array.
+            // This is crucial to prevent an empty "IN ()" clause in the next query.
+            return res.json({ message: "success", data: [], pagination: { currentPage: page, totalPages, totalSales } });
+        }
+
+        // Get items for the paginated sales
+        const saleIds = salesRows.map(s => s.id);
+        const placeholders = saleIds.map(() => '?').join(',');
+        const itemsSql = `SELECT si.sale_id, si.quantity, si.price_at_sale, p.name as product_name FROM sale_items si JOIN products p ON si.product_id = p.id WHERE si.sale_id IN (${placeholders})`;
+        const itemsRows = await dbAsync.all(itemsSql, saleIds);
+
+        // Group items with their sales
+        const salesMap = new Map(salesRows.map(s => [s.id, { ...s, sale_id: s.id, items: [] }]));
+        itemsRows.forEach(item => {
+            if (salesMap.has(item.sale_id)) {
+                salesMap.get(item.sale_id).items.push(item);
+            }
+        });
+
+        res.json({ message: "success", data: Array.from(salesMap.values()), pagination: { currentPage: page, totalPages, totalSales } });
+
+    } catch (err) {
+        next(err);
+    }
+});
+
+// GET daily sales report
+app.get('/api/sales/daily-report', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const { startDate, endDate } = req.query;
+        let whereClause = '';
+        const params = [];
+
+        if (startDate && endDate) {
+            whereClause = `WHERE DATE(s.sale_date) BETWEEN ? AND ?`;
+            params.push(startDate, endDate);
+        }
+
+        const sql = `
+            SELECT
+                DATE(s.sale_date) as report_date,
+                COUNT(DISTINCT s.id) as number_of_sales,
+                SUM(s.total_amount) as total_revenue,
+                COALESCE(SUM(si.quantity), 0) as total_items_sold
+            FROM 
+                sales s
+            LEFT JOIN sale_items si ON s.id = si.sale_id
+            ${whereClause}
+            GROUP BY 
+                report_date
+            ORDER BY report_date DESC
+        `;
+        const rows = await dbAsync.all(sql, params);
+        res.json({ "message": "success", "data": rows });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// GET top selling products report
+app.get('/api/reports/top-selling', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const { startDate, endDate } = req.query;
+        let whereClause = '';
+        const params = [];
+
+        if (startDate && endDate) {
+            whereClause = `WHERE DATE(s.sale_date) BETWEEN ? AND ?`;
+            params.push(startDate, endDate);
+        }
+
+        const sql = `
+            SELECT
+                p.name,
+                SUM(si.quantity) as total_sold
+            FROM sale_items si
+            JOIN products p ON si.product_id = p.id
+            JOIN sales s ON si.sale_id = s.id
+            ${whereClause}
+            GROUP BY p.id, p.name
+            ORDER BY total_sold DESC
+            LIMIT 10
+        `;
+        const rows = await dbAsync.all(sql, params);
+        res.json({ "message": "success", "data": rows });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// GET cashier performance report
+app.get('/api/reports/cashier-performance', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const { startDate, endDate } = req.query;
+        let whereClause = '';
+        const params = [];
+
+        if (startDate && endDate) {
+            whereClause = `WHERE DATE(s.sale_date) BETWEEN ? AND ?`;
+            params.push(startDate, endDate);
+        }
+
+        const sql = `
+            SELECT
+                u.username,
+                COUNT(s.id) as number_of_sales,
+                SUM(s.total_amount) as total_revenue
+            FROM sales s
+            JOIN users u ON s.user_id = u.id
+            ${whereClause}
+            GROUP BY u.id, u.username
+            ORDER BY total_revenue DESC
+        `;
+        const rows = await dbAsync.all(sql, params);
+        res.json({ message: "success", data: rows });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // GET a single sale by ID
 app.get('/api/sales/:id', isAuthenticated, async (req, res, next) => {
     try {
         const { id } = req.params;
         const sql = `
-            SELECT s.id AS sale_id, s.total_amount, s.sale_date, si.quantity, si.price_at_sale, p.name AS product_name
+            SELECT s.id AS sale_id, s.total_amount, s.sale_date, u.username as cashier_name, si.quantity, si.price_at_sale, p.name AS product_name
             FROM sales s
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
+            LEFT JOIN users u ON s.user_id = u.id
             WHERE s.id = ?
         `;
         const rows = await dbAsync.all(sql, [id]);
@@ -154,42 +331,12 @@ app.get('/api/sales/:id', isAuthenticated, async (req, res, next) => {
             sale_id: rows[0].sale_id,
             total_amount: rows[0].total_amount,
             sale_date: rows[0].sale_date,
+            cashier_name: rows[0].cashier_name || 'N/A',
             items: rows.map(r => ({ product_name: r.product_name, quantity: r.quantity, price_at_sale: r.price_at_sale }))
         };
 
         res.json({ message: "success", data: saleDetails });
 
-    } catch (err) {
-        next(err);
-    }
-});
-
-// GET sales history
-app.get('/api/sales/history', isAuthenticated, isAdmin, async (req, res, next) => {
-    try {
-        const sql = `
-            SELECT s.id AS sale_id, s.total_amount, s.sale_date, si.quantity, si.price_at_sale, p.name AS product_name
-            FROM sales s
-            JOIN sale_items si ON s.id = si.sale_id
-            JOIN products p ON si.product_id = p.id
-            ORDER BY s.sale_date DESC, s.id DESC
-        `;
-        const rows = await dbAsync.all(sql, []);
-        // Group items by sale_id
-        const sales = {};
-        rows.forEach(row => {
-            if (!sales[row.sale_id]) {
-                sales[row.sale_id] = {
-                    sale_id: row.sale_id,
-                    total_amount: row.total_amount,
-                    sale_date: row.sale_date,
-                    items: []
-                };
-            }
-            sales[row.sale_id].items.push({ product_name: row.product_name, quantity: row.quantity, price_at_sale: row.price_at_sale });
-        });
-
-        res.json({ "message": "success", "data": Object.values(sales) });
     } catch (err) {
         next(err);
     }

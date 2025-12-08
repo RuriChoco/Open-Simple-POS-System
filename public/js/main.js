@@ -157,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderReceiptForPrinting(saleId, saleData) {
         const saleDate = new Date().toLocaleString();
+        const cashierName = welcomeUser.textContent || 'N/A';
 
         let itemsHtml = '';
         saleData.items.forEach(item => {
@@ -178,6 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <main id="receipt-details">
                     <div class="receipt-info">
                         <p><strong>Sale ID:</strong> ${saleId}</p>
+                        <p><strong>Cashier:</strong> ${cashierName}</p>
                         <p><strong>Date:</strong> ${saleDate}</p>
                     </div>
                     <table>

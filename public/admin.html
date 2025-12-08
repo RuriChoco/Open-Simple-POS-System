@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css"> <!-- Base styles -->
     <link rel="stylesheet" href="/css/admin.css"> <!-- Admin-specific styles -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <header>
@@ -32,7 +33,30 @@
             <!-- Main Content -->
             <div class="admin-main-content">
                 <div class="card">
-                    <h2>Sales History</h2>
+                    <div class="card-header">
+                        <h2>Daily Sales Report</h2>
+                        <button id="export-csv-btn" style="display: none;">Export to CSV</button>
+                    </div>
+                    <div class="report-filters">
+                        <label for="start-date">From:</label>
+                        <input type="date" id="start-date">
+                        <label for="end-date">To:</label>
+                        <input type="date" id="end-date">
+                        <button id="filter-report-btn">Filter</button>
+                        <button id="reset-filter-btn" class="secondary-btn" style="display: none;">Reset</button>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="sales-chart"></canvas>
+                    </div>
+                    <div id="daily-sales-report">
+                        <p>Loading report...</p>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Sales History</h2>
+                        <input type="search" id="sales-history-search" placeholder="Search by Sale ID...">
+                    </div>
                     <div id="sales-history-list">
                         <p>Loading sales history...</p>
                     </div>
@@ -50,8 +74,23 @@
                     </form>
                 </div>
                 <div class="card">
-                    <h2>Manage Products</h2>
+                    <div class="card-header">
+                        <h2>Manage Products</h2>
+                        <input type="search" id="product-mgmt-search" placeholder="Search products...">
+                    </div>
                     <div id="product-management-list"></div>
+                </div>
+                <div class="card">
+                    <h2>Top-Selling Products</h2>
+                    <div id="top-selling-report">
+                        <p>Loading report...</p>
+                    </div>
+                </div>
+                <div class="card">
+                    <h2>Cashier Performance</h2>
+                    <div id="cashier-performance-report">
+                        <p>Loading report...</p>
+                    </div>
                 </div>
                 <div class="card">
                     <h2>Create Cashier Account</h2>
