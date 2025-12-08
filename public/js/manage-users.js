@@ -5,6 +5,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const userManagementList = document.getElementById('user-management-list');
     const addUserBtn = document.getElementById('add-user-btn');
 
+    // --- WebSocket Setup ---
+    function connectWebSocket() {
+        const ws = new WebSocket(`ws://${window.location.host}`);
+
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            if (message.type === 'USERS_UPDATED') {
+                console.log('Users updated, refreshing management list...');
+                fetchUsersForManagement();
+            }
+        };
+
+        ws.onclose = () => {
+            setTimeout(connectWebSocket, 5000);
+        };
+    }
+
     // --- Centralized API Fetching with Auth Handling ---
     async function fetchWithAuth(url, options = {}) {
         const response = await fetch(url, options);
@@ -202,6 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Initial Load ---
     checkSession();
+    connectWebSocket();
     createAddUserModal();
     createChangePasswordModal();
     fetchUsersForManagement();

@@ -15,6 +15,25 @@ document.addEventListener('DOMContentLoaded', () => {
     let cart = [];
     let allProducts = []; // Cache all products to avoid re-fetching
 
+    // --- WebSocket Setup ---
+    function connectWebSocket() {
+        const ws = new WebSocket(`ws://${window.location.host}`);
+
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            if (message.type === 'PRODUCTS_UPDATED') {
+                console.log('Products updated, refreshing list...');
+                fetchProducts();
+            }
+        };
+
+        ws.onclose = () => {
+            console.log('WebSocket disconnected. Attempting to reconnect in 5 seconds...');
+            setTimeout(connectWebSocket, 5000);
+        };
+    }
+
+
     // --- UI Mode ---
     function setUIMode(mode) {
         document.body.classList.remove('keyboard-mode', 'touch-mode');
@@ -72,12 +91,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         products.forEach(product => {
             const productEl = document.createElement('div');
-            productEl.className = 'product-item';
+            productEl.className = `product-item ${product.quantity <= 0 ? 'out-of-stock' : ''}`;
             productEl.tabIndex = 0; // Make it focusable
             productEl.dataset.productId = product.id; // Store product ID for delegation
             productEl.innerHTML = `
                 <div class="product-name">${product.name}</div>
                 <div class="product-price">₱${product.price.toFixed(2)}</div>
+                <div class="product-stock">Stock: ${product.quantity}</div>
             `;
             fragment.appendChild(productEl);
         });
@@ -85,6 +105,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addToCart(product) {
+        if (product.quantity <= 0) {
+            alert(`'${product.name}' is out of stock.`);
+            return;
+        }
+
+        const existingItemInCart = cart.find(item => item.id === product.id);
+        if (existingItemInCart && existingItemInCart.quantity >= product.quantity) {
+            alert(`No more stock available for '${product.name}'.`);
+            return;
+        }
+
         const existingItem = cart.find(item => item.id === product.id);
         if (existingItem) {
             existingItem.quantity++;
@@ -98,6 +129,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateCartItem(productId, change) {
         const item = cart.find(i => i.id === productId);
         if (item) {
+            // Prevent increasing quantity beyond available stock
+            if (change > 0) {
+                const productInStock = allProducts.find(p => p.id === productId);
+                if (item.quantity + change > productInStock.quantity) {
+                    alert(`Not enough stock for '${item.name}'. Only ${productInStock.quantity} available.`);
+                    return;
+                }
+            }
+
             item.quantity += change;
             if (item.quantity <= 0) {
                 // If quantity is 0 or less, remove it from the cart
@@ -221,7 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
-                throw new Error('Sale completion failed');
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Sale completion failed');
             }
 
             const result = await response.json();
@@ -238,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
             searchInput.focus(); // Return focus to search for next transaction
         } catch (error) {
             console.error('Error completing sale:', error);
-            alert('Error completing sale. Please try again.');
+            alert(`Error completing sale: ${error.message}`);
         }
     }
 
@@ -269,6 +310,9 @@ document.addEventListener('DOMContentLoaded', () => {
     productList.addEventListener('click', (e) => {
         const productItem = e.target.closest('.product-item');
         if (productItem) {
+            if (productItem.classList.contains('out-of-stock')) {
+                return; // Do not add out-of-stock items
+            }
             const productId = parseInt(productItem.dataset.productId);
             const product = allProducts.find(p => p.id === productId);
             if (product) {
@@ -451,6 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial load
     // setUIMode is called above
     checkSession();
+    connectWebSocket();
     fetchProducts();
     updateCart(); // Initialize cart view
 });

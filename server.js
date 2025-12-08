@@ -6,10 +6,19 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
 const SQLiteStore = require('connect-sqlite3')(session);
+const WebSocket = require('ws');
 
 const app = express();
 const PORT = 3000;
 const saltRounds = 10;
+
+// Create HTTP server to attach WebSocket server to
+const server = app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});
+
+// WebSocket server setup
+const wss = new WebSocket.Server({ server });
 
 // Promisify db methods for async/await
 const dbAsync = {
@@ -26,6 +35,30 @@ const dbAsync = {
         });
     }
 };
+
+wss.on('connection', ws => {
+    console.log('Client connected');
+    ws.on('close', () => console.log('Client disconnected'));
+});
+
+function broadcast(data) {
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(data));
+        }
+    });
+}
+
+// --- Helper Functions ---
+async function logAdminAction(userId, actionType, details = '') {
+    try {
+        const sql = 'INSERT INTO action_logs (user_id, action_type, details) VALUES (?, ?, ?)';
+        await dbAsync.run(sql, [userId, actionType, details]);
+    } catch (error) {
+        console.error('Failed to log admin action:', error);
+    }
+    broadcast({ type: 'LOGS_UPDATED' });
+}
 // Middleware
 app.use(express.json()); // To parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // To parse URL-encoded bodies
@@ -59,11 +92,13 @@ app.get('/api/products', async (req, res, next) => {
 // POST a new product
 app.post('/api/products', isAuthenticated, isAdmin, async (req, res, next) => {
     try {
-        const { name, price, barcode } = req.body;
-        const sql = 'INSERT INTO products (name, price, barcode) VALUES (?,?,?)';
+        const { name, price, barcode, quantity } = req.body;
+        const sql = 'INSERT INTO products (name, price, barcode, quantity) VALUES (?,?,?,?)';
         // We need the 'this' context from db.run, so we can't use the promisified version directly here without some adjustments.
-        db.run(sql, [name, price, barcode], function (err) {
+        db.run(sql, [name, price, barcode, quantity || 0], function (err) {
             if (err) return next(err);
+            logAdminAction(req.session.user.id, 'CREATE_PRODUCT', `Created product '${name}' (ID: ${this.lastID})`);
+            broadcast({ type: 'PRODUCTS_UPDATED' });
             res.json({ "message": "success", "data": { id: this.lastID, name, price, barcode } });
         });
     } catch (err) {
@@ -79,6 +114,8 @@ app.delete('/api/products/:id', isAuthenticated, isAdmin, async (req, res, next)
         if (result.changes === 0) {
             return res.status(404).json({ error: "Product not found." });
         }
+        logAdminAction(req.session.user.id, 'DELETE_PRODUCT', `Deleted product ID ${id}`);
+        broadcast({ type: 'PRODUCTS_UPDATED' });
         res.json({ message: "deleted", changes: result.changes });
     } catch (err) {
         next(err);
@@ -89,19 +126,54 @@ app.delete('/api/products/:id', isAuthenticated, isAdmin, async (req, res, next)
 app.put('/api/products/:id', isAuthenticated, isAdmin, async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { name, price, barcode } = req.body;
+        const { name, price, barcode, quantity } = req.body;
 
-        if (name === undefined || price === undefined || barcode === undefined) {
-            return res.status(400).json({ "error": "Missing required fields: name, price, and barcode." });
+        if (name === undefined || price === undefined || quantity === undefined) {
+            return res.status(400).json({ "error": "Missing required fields: name, price, and quantity." });
         }
 
-        const sql = `UPDATE products SET name = ?, price = ?, barcode = ? WHERE id = ?`;
-        const result = await dbAsync.run(sql, [name, price, barcode, id]);
+        const sql = `UPDATE products SET name = ?, price = ?, barcode = ?, quantity = ? WHERE id = ?`;
+        const result = await dbAsync.run(sql, [name, price, barcode, quantity, id]);
 
         if (result.changes === 0) {
             return res.status(404).json({ "error": "Product not found." });
         }
+        logAdminAction(req.session.user.id, 'UPDATE_PRODUCT', `Updated product ID ${id} (name='${name}', quantity=${quantity})`);
+        broadcast({ type: 'PRODUCTS_UPDATED' });
         res.json({ message: "Product updated successfully", changes: result.changes });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ADJUST product stock
+app.post('/api/products/:id/adjust-stock', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { adjustment } = req.body;
+
+        if (adjustment === undefined || typeof adjustment !== 'number' || adjustment === 0) {
+            return res.status(400).json({ "error": "A non-zero numeric 'adjustment' value is required." });
+        }
+
+        // Prevent stock from going below zero
+        if (adjustment < 0) {
+            const product = await dbAsync.get('SELECT quantity FROM products WHERE id = ?', [id]);
+            if (product && (product.quantity + adjustment < 0)) {
+                return res.status(400).json({ error: `Adjustment would result in negative stock. Current stock: ${product.quantity}` });
+            }
+        }
+
+        const sql = `UPDATE products SET quantity = quantity + ? WHERE id = ?`;
+        const result = await dbAsync.run(sql, [adjustment, id]);
+
+        if (result.changes === 0) {
+            return res.status(404).json({ "error": "Product not found." });
+        }
+
+        logAdminAction(req.session.user.id, 'ADJUST_STOCK', `Adjusted stock for product ID ${id} by ${adjustment > 0 ? '+' : ''}${adjustment}`);
+        broadcast({ type: 'PRODUCTS_UPDATED' });
+        res.json({ message: "Stock adjusted successfully." });
     } catch (err) {
         next(err);
     }
@@ -119,6 +191,17 @@ app.post('/api/sales', isAuthenticated, async (req, res, next) => {
     }
 
     try {
+        // Check stock levels before starting transaction
+        for (const item of items) {
+            const product = await dbAsync.get('SELECT quantity FROM products WHERE id = ?', [item.id]);
+            if (!product) {
+                return res.status(400).json({ error: `Product with ID ${item.id} not found.` });
+            }
+            if (product.quantity < item.quantity) {
+                return res.status(400).json({ error: `Not enough stock for product ID ${item.id}. Available: ${product.quantity}, Requested: ${item.quantity}` });
+            }
+        }
+
         await dbAsync.run('BEGIN TRANSACTION');
 
         // Can't use promisified run if we need `this.lastID`
@@ -133,10 +216,14 @@ app.post('/api/sales', isAuthenticated, async (req, res, next) => {
         const itemSql = 'INSERT INTO sale_items (sale_id, product_id, quantity, price_at_sale) VALUES (?, ?, ?, ?)';
         for (const item of items) {
             await dbAsync.run(itemSql, [saleId, item.id, item.quantity, item.price]);
+            // Decrement stock
+            await dbAsync.run('UPDATE products SET quantity = quantity - ? WHERE id = ?', [item.quantity, item.id]);
         }
 
         await dbAsync.run('COMMIT');
 
+        broadcast({ type: 'PRODUCTS_UPDATED' }); // Stock levels changed
+        broadcast({ type: 'SALES_UPDATED' });
         res.json({ "message": "Sale completed successfully!", "saleId": saleId });
 
     } catch (err) {
@@ -149,7 +236,19 @@ app.post('/api/sales', isAuthenticated, async (req, res, next) => {
 app.delete('/api/sales/:id', isAuthenticated, isAdmin, async (req, res, next) => {
     const { id } = req.params;
     try {
+        // Before deleting, get the items for logging purposes
+        const itemsToVoid = await dbAsync.all(
+            'SELECT si.product_id, si.quantity, p.name FROM sale_items si JOIN products p ON si.product_id = p.id WHERE si.sale_id = ?',
+            [id]
+        );
+
         await dbAsync.run('BEGIN TRANSACTION');
+
+        // Restore the stock for each item in the voided sale
+        for (const item of itemsToVoid) {
+            await dbAsync.run('UPDATE products SET quantity = quantity + ? WHERE id = ?', [item.quantity, item.product_id]);
+        }
+
         // Delete items from the sale first
         await dbAsync.run('DELETE FROM sale_items WHERE sale_id = ?', id);
         // Then delete the sale itself
@@ -159,6 +258,13 @@ app.delete('/api/sales/:id', isAuthenticated, isAdmin, async (req, res, next) =>
         if (result.changes === 0) {
             return res.status(404).json({ error: "Sale not found to void." });
         }
+
+        // Create a detailed log message with the voided items
+        const itemDetails = itemsToVoid.map(item => `${item.quantity}x ${item.name}`).join(', ');
+        const logDetails = `Voided sale ID ${id}. Items: ${itemDetails || 'None'}`;
+        logAdminAction(req.session.user.id, 'VOID_SALE', logDetails);
+        broadcast({ type: 'PRODUCTS_UPDATED' }); // Stock levels changed
+        broadcast({ type: 'SALES_UPDATED' });
 
         res.json({ message: "Sale voided successfully." });
     } catch (err) {
@@ -290,6 +396,22 @@ app.get('/api/reports/top-selling', isAuthenticated, isAdmin, async (req, res, n
     }
 });
 
+// GET low stock products report
+app.get('/api/reports/low-stock', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const threshold = req.query.threshold || 10;
+        const sql = `
+            SELECT id, name, quantity FROM products
+            WHERE quantity <= ? AND quantity > 0
+            ORDER BY quantity ASC
+        `;
+        const rows = await dbAsync.all(sql, [threshold]);
+        res.json({ message: "success", data: rows });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // GET cashier performance report
 app.get('/api/reports/cashier-performance', isAuthenticated, isAdmin, async (req, res, next) => {
     try {
@@ -391,6 +513,8 @@ app.post('/api/users', isAuthenticated, isAdmin, async (req, res, next) => {
 
         const hashedPassword = await bcrypt.hash(password, saltRounds);
         await dbAsync.run('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, hashedPassword, role]);
+        logAdminAction(req.session.user.id, 'CREATE_USER', `Created user '${username}' with role '${role}'.`);
+        broadcast({ type: 'USERS_UPDATED' });
         res.status(201).json({ message: `User '${username}' created successfully as a ${role}.` });
     } catch (err) {
         next(err); // The centralized error handler will catch UNIQUE constraint errors
@@ -443,6 +567,52 @@ app.get('/api/users', isAuthenticated, isAdmin, async (req, res, next) => {
     }
 });
 
+// GET admin action logs
+app.get('/api/logs/admin-actions', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const page = req.query.page ? parseInt(req.query.page, 10) : null;
+        const limit = parseInt(req.query.limit) || 25; // Set a limit per page
+        const offset = (page - 1) * limit;
+        const search = req.query.search || '';
+
+        let whereClause = '';
+        const queryParams = [];
+
+        if (search) {
+            whereClause = `WHERE LOWER(u.username) LIKE ? OR LOWER(l.action_type) LIKE ? OR LOWER(l.details) LIKE ?`;
+            const searchTerm = `%${search.toLowerCase()}%`;
+            queryParams.push(searchTerm, searchTerm, searchTerm);
+        }
+
+        let sql = `
+            SELECT
+                l.id, l.action_type, l.details, l.timestamp, u.username
+            FROM action_logs l
+            JOIN users u ON l.user_id = u.id
+            ${whereClause}
+            ORDER BY l.timestamp DESC
+        `;
+
+        if (page) {
+            // Get total count for pagination
+            const countSql = `SELECT COUNT(l.id) as count FROM action_logs l JOIN users u ON l.user_id = u.id ${whereClause}`;
+            const totalResult = await dbAsync.get(countSql, queryParams);
+            const totalLogs = totalResult.count;
+            const totalPages = Math.ceil(totalLogs / limit);
+
+            sql += ` LIMIT ? OFFSET ?`;
+            const rows = await dbAsync.all(sql, [...queryParams, limit, offset]);
+            res.json({ message: "success", data: rows, pagination: { currentPage: page, totalPages } });
+        } else {
+            // No page specified, return all matching results for export
+            const rows = await dbAsync.all(sql, queryParams);
+            res.json({ message: "success", data: rows });
+        }
+    } catch (err) {
+        next(err);
+    }
+});
+
 // UPDATE a user's role (admin only)
 app.put('/api/users/:id/role', isAuthenticated, isAdmin, async (req, res, next) => {
     try {
@@ -470,6 +640,8 @@ app.put('/api/users/:id/role', isAuthenticated, isAdmin, async (req, res, next) 
         if (result.changes === 0) {
             return res.status(404).json({ error: "User not found." });
         }
+        logAdminAction(req.session.user.id, 'UPDATE_USER_ROLE', `Changed role for user ID ${userIdToUpdate} to '${newRole}'.`);
+        broadcast({ type: 'USERS_UPDATED' });
         res.json({ message: "User role updated successfully." });
     } catch (err) {
         next(err);
@@ -537,6 +709,14 @@ app.get('/manage-users', isAuthenticated, isAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'manage-users.html'));
 });
 
+app.get('/admin-logs', isAuthenticated, isAdmin, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin-logs.html'));
+});
+
+app.get('/admin-logs', isAuthenticated, isAdmin, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin-logs.html'));
+});
+
 
 // Receipt page
 app.get('/receipt/:id', isAuthenticated, (req, res) => {
@@ -557,8 +737,4 @@ app.get('/admin-register', (req, res) => {
     // This page should only be accessible if no admin exists.
     // The frontend JS will handle the redirect logic, but we can serve the file.
     res.sendFile(path.join(__dirname, 'public', 'admin-register.html'));
-});
-
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
 });

@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const logoutBtn = document.getElementById('logout-btn');
     const topSellingContainer = document.getElementById('top-selling-report');
     const cashierPerformanceContainer = document.getElementById('cashier-performance-report');
+    const lowStockContainer = document.getElementById('low-stock-report');
     const startDateInput = document.getElementById('start-date');
     const endDateInput = document.getElementById('end-date');
     const filterReportBtn = document.getElementById('filter-report-btn');
@@ -13,6 +14,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportCsvBtn = document.getElementById('export-csv-btn');
     const welcomeUser = document.getElementById('welcome-user');
     let salesChartInstance = null; // To hold the chart instance
+
+    // --- WebSocket Setup ---
+    function connectWebSocket() {
+        const ws = new WebSocket(`ws://${window.location.host}`);
+
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            console.log('Admin dashboard received message:', message.type);
+
+            switch (message.type) {
+                case 'PRODUCTS_UPDATED':
+                    fetchLowStockAlerts();
+                    // Top selling might also change
+                    fetchDailySalesReport(startDateInput.value, endDateInput.value);
+                    break;
+                case 'SALES_UPDATED':
+                    fetchDailySalesReport(startDateInput.value, endDateInput.value);
+                    fetchSalesHistory();
+                    break;
+            }
+        };
+
+        ws.onclose = () => {
+            setTimeout(connectWebSocket, 5000);
+        };
+    }
 
     // --- FUNCTION DECLARATIONS ---
 
@@ -138,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             fetchTopSellingProducts(startDate, endDate);
             fetchCashierPerformance(startDate, endDate);
+            fetchLowStockAlerts(); // Refresh low stock alerts too
         } catch (error) {
             console.error('Failed to fetch daily sales report:', error);
             dailySalesContainer.innerHTML = '<p>Error loading daily report.</p>';
@@ -302,6 +330,36 @@ document.addEventListener('DOMContentLoaded', () => {
             </tbody>`;
         cashierPerformanceContainer.innerHTML = '';
         cashierPerformanceContainer.appendChild(table);
+    }
+
+    async function fetchLowStockAlerts() {
+        try {
+            const { data: lowStockProducts } = await fetchWithAuth('/api/reports/low-stock');
+            renderLowStockAlerts(lowStockProducts);
+        } catch (error) {
+            console.error('Failed to fetch low stock alerts:', error);
+            lowStockContainer.innerHTML = '<p>Error loading alerts.</p>';
+        }
+    }
+
+    function renderLowStockAlerts(products) {
+        if (!products || products.length === 0) {
+            lowStockContainer.innerHTML = '<p>No products with low stock.</p>';
+            return;
+        }
+
+        const list = document.createElement('ul');
+        list.className = 'low-stock-list';
+        products.forEach(product => {
+            const item = document.createElement('li');
+            item.innerHTML = `
+                <a href="/manage-products">${product.name}</a>
+                <span class="stock-level">${product.quantity} left</span>
+            `;
+            list.appendChild(item);
+        });
+        lowStockContainer.innerHTML = '';
+        lowStockContainer.appendChild(list);
     }
 
     function exportReportToCsv(reportData) {
@@ -569,7 +627,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Initial Load ---
     async function initializeDashboard() {
         await checkSession();
+        connectWebSocket();
         fetchDailySalesReport();
+        fetchLowStockAlerts();
         fetchSalesHistory();
     }
 

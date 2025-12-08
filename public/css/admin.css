@@ -75,12 +75,9 @@ input:focus {
     font-weight: 500;
 }
 
-.product-mgmt-item .delete-btn {
-    width: auto;
-    background-color: var(--danger-color);
-}
-.product-mgmt-item .delete-btn:hover {
-    background-color: var(--danger-hover);
+.product-stock {
+    font-size: 0.9rem;
+    color: var(--secondary-color);
 }
 
 /* Sales History Styles */
@@ -111,18 +108,6 @@ input:focus {
     gap: 0.5rem;
 }
 
-.reprint-btn {
-    width: auto !important;
-    padding: 0.4rem 0.8rem !important;
-    background-color: var(--secondary-color) !important;
-    color: white !important;
-}
-
-.void-btn {
-    width: auto !important; /* Override general button styles */
-    padding: 0.4rem 0.8rem !important;
-    background-color: var(--danger-color) !important;
-}
 .sale-history-item summary:hover {
     background-color: var(--light-color);
 }
@@ -148,11 +133,6 @@ input:focus {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
-}
-
-.card-header button {
-    width: auto;
-    padding: 0.5rem 1rem;
 }
 
 .pagination-controls {
@@ -230,6 +210,15 @@ input:focus {
     margin-bottom: 2rem;
 }
 
+.log-action-type {
+    font-family: 'Courier New', Courier, monospace;
+    background-color: var(--light-color);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    text-transform: lowercase;
+}
+
 /* Top Selling Products List */
 .top-selling-list {
     list-style-position: inside;
@@ -239,12 +228,46 @@ input:focus {
     gap: 0.75rem;
 }
 
+.low-stock-list {
+    list-style: none;
+    padding-left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.low-stock-list li {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--light-color);
+}
+
+.low-stock-list li a {
+    font-weight: 500;
+    text-decoration: none;
+    color: var(--primary-color);
+}
+
+.stock-level {
+    font-weight: 700;
+    color: var(--danger-color);
+    background-color: #fbeaea;
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+}
+
 .top-selling-list li {
     display: flex;
     justify-content: space-between;
     padding: 0.5rem 0;
     border-bottom: 1px solid var(--light-color);
 }
+
+.card-alert {
+    border-left: 5px solid var(--danger-color);
+}
+
 
 /* User Management List */
 #user-management-list {
@@ -271,11 +294,6 @@ input:focus {
     gap: 0.5rem;
 }
 
-.user-mgmt-actions button {
-    width: auto;
-    padding: 0.4rem 0.8rem;
-}
-
 .user-role {
     font-size: 0.85rem;
     background-color: var(--light-color);
@@ -284,19 +302,6 @@ input:focus {
     border-radius: 10px;
     margin-left: 0.5rem;
     text-transform: capitalize;
-}
-
-.role-select {
-    padding: 0.4rem 0.8rem;
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
-    background-color: var(--light-color);
-    font-weight: 500;
-}
-
-.delete-user-btn {
-    background-color: var(--danger-color);
-    color: white;
 }
 
 /* Responsive */
@@ -380,10 +385,31 @@ input:focus {
     background-color: white;
 }
 
+/* --- Action Button Overrides --- */
+.action-btn,
+.card-header button,
+.user-mgmt-actions button,
+.sale-actions button {
+    width: auto;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+}
+
 .edit-btn {
     background-color: var(--secondary-color);
     color: white;
 }
 .edit-btn:hover {
     background-color: var(--secondary-hover);
+}
+
+.reprint-btn {
+    background-color: var(--secondary-color);
+    color: white;
+}
+
+.void-btn,
+.delete-user-btn {
+    background-color: var(--danger-color);
+    color: white;
 }

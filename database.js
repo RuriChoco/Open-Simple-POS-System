@@ -41,6 +41,25 @@ const migrations = [
         script: `
             ALTER TABLE sales ADD COLUMN user_id INTEGER REFERENCES users(id);
         `
+    },
+    {
+        version: 3,
+        script: `
+            CREATE TABLE IF NOT EXISTS action_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                action_type TEXT NOT NULL,
+                details TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+        `
+    },
+    {
+        version: 4,
+        script: `
+            ALTER TABLE products ADD COLUMN quantity INTEGER NOT NULL DEFAULT 0;
+        `
     }
 ];
 const LATEST_VERSION = migrations.length;
@@ -60,6 +79,8 @@ const db = new sqlite3.Database('./pos.sqlite', (err) => {
             if (currentVersion < LATEST_VERSION) {
                 console.log(`Migrating database from version ${currentVersion} to ${LATEST_VERSION}...`);
                 runMigrations(currentVersion);
+            } else {
+                cleanupOldLogs();
             }
         });
     }
@@ -80,6 +101,22 @@ function runMigrations(fromVersion) {
             db.run(`PRAGMA user_version = ${migration.version}`);
         }
         console.log('Database migration complete.');
+        cleanupOldLogs();
+    });
+}
+
+function cleanupOldLogs() {
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const timestampLimit = ninetyDaysAgo.toISOString();
+
+    const sql = `DELETE FROM action_logs WHERE timestamp < ?`;
+    db.run(sql, [timestampLimit], function(err) {
+        if (err) {
+            console.error('Error cleaning up old action logs:', err.message);
+        } else if (this.changes > 0) {
+            console.log(`Cleaned up ${this.changes} old action logs.`);
+        }
     });
 }
 
