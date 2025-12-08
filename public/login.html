@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - POS System</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/admin.css"> <!-- Re-use some form styles -->
+</head>
+<body>
+    <header><h1>POS System Login</h1></header>
+    <main style="max-width: 400px; margin-top: 4rem;">
+        <div class="card">
+            <form id="login-form">
+                <h2>Login</h2>
+                <div id="error-message" style="color: var(--danger-color); display: none; margin-bottom: 1rem;"></div>
+                <input type="text" id="username" placeholder="Username" required>
+                <input type="password" id="password" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+        </div>
+    </main>
+    <script src="/js/login.js" defer></script>
+</body>
+</html>

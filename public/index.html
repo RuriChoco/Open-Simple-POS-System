@@ -1,0 +1,70 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POS System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="pos-page">
+    <header>
+        <h1>Simple POS System</h1>
+        <nav class="admin-nav">
+            <div class="ui-mode-switcher">
+                <button id="keyboard-mode-btn" class="mode-btn" title="Keyboard Mode">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M5 10.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5"/>
+                        <path d="M3.5 2a.5.5 0 0 0-.5.5v11a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5zM2 3.5a1.5 1.5 0 0 1 1.5-1.5h9A1.5 1.5 0 0 1 14 3.5v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 14.5z"/>
+                    </svg>
+                </button>
+                <button id="touch-mode-btn" class="mode-btn" title="Touchscreen Mode">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M6.932 4.252a.5.5 0 0 1 .34.639l-1.5 4.5a.5.5 0 1 1-.945-.318l1.5-4.5a.5.5 0 0 1 .605-.321"/>
+                        <path d="M9.5 1.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0"/>
+                        <path d="M11.02 3.342a.514.514 0 0 1 .514.514v9.288a.514.514 0 0 1-.514.514H4.48a.514.514 0 0 1-.514-.514V3.856a.514.514 0 0 1 .514-.514zM4.48 2.342a1.514 1.514 0 0 0-1.514 1.514v9.288a1.514 1.514 0 0 0 1.514 1.514h6.54a1.514 1.514 0 0 0 1.514-1.514V3.856a1.514 1.514 0 0 0-1.514-1.514z"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="user-menu">
+                <span id="welcome-user"></span>
+                <a href="#" id="logout-btn" title="Logout">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-box-arrow-right" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0z"/>
+                        <path fill-rule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708z"/>
+                    </svg>
+                </a>
+            </div>
+        </nav>
+    </header>
+    <main>
+        <div class="pos-container">
+            <div class="transaction-panel">
+                <div class="cart-header">
+                    <h2>Current Sale</h2>
+                </div>
+                <ul id="cart-items">
+                    <!-- Cart items will be added here -->
+                </ul>
+                <div class="transaction-summary">
+                    <div id="cart-total">Total: ₱0.00</div>
+                    <div class="action-buttons">
+                        <button id="clear-cart-btn">Clear (F4)</button>
+                        <button id="complete-sale-btn">Pay (F9)</button>
+                    </div>
+                </div>
+            </div>
+            <div class="product-panel card">
+                <input type="text" id="product-search" placeholder="Search products... (Use Tab to navigate panels)">
+                <div id="product-list">
+                    <!-- Products will be loaded here by JS -->
+                </div>
+            </div>
+        </div>
+    </main>
+    <script src="/js/main.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!-- public/admin.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - POS System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css"> <!-- Base styles -->
+    <link rel="stylesheet" href="/css/admin.css"> <!-- Admin-specific styles -->
+</head>
+<body>
+    <header>
+        <h1>Admin Dashboard</h1>
+        <nav class="admin-nav">
+            <a href="/">Go to POS</a>
+            <div class="user-menu">
+                <span id="welcome-user"></span>
+                <a href="#" id="logout-btn" title="Logout">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-box-arrow-right" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0z"/>
+                        <path fill-rule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708z"/>
+                    </svg>
+                </a>
+            </div>
+        </nav>
+    </header>
+    <main>
+        <div class="admin-grid-container">
+            <!-- Main Content -->
+            <div class="admin-main-content">
+                <div class="card">
+                    <h2>Sales History</h2>
+                    <div id="sales-history-list">
+                        <p>Loading sales history...</p>
+                    </div>
+                </div>
+            </div>
+            <!-- Sidebar -->
+            <div class="admin-sidebar">
+                <div class="card">
+                    <h2>Add New Product</h2>
+                    <form id="add-product-form">
+                        <input type="text" id="product-name" placeholder="Product Name" required>
+                        <input type="number" id="product-price" placeholder="Price" step="0.01" required>
+                        <input type="text" id="product-barcode" placeholder="Barcode (optional)">
+                        <button type="submit">Add Product</button>
+                    </form>
+                </div>
+                <div class="card">
+                    <h2>Manage Products</h2>
+                    <div id="product-management-list"></div>
+                </div>
+                <div class="card">
+                    <h2>Create Cashier Account</h2>
+                    <form id="create-cashier-form">
+                        <input type="text" id="cashier-username" placeholder="Cashier Username" required>
+                        <input type="password" id="cashier-password" placeholder="Password" required>
+                        <button type="submit">Create Cashier</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script src="/js/admin.js" defer></script>
+</body>
+</html>
