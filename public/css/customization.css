@@ -1,0 +1,96 @@
+/* public/css/customization.css */
+.customization-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+    gap: 2rem;
+}
+
+/* Form Group styling for consistency */
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: 1rem;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 100px;
+}
+
+/* Receipt Preview */
+.receipt-preview-container {
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.receipt-preview-container h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+    color: var(--secondary-color);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.receipt-preview {
+    font-family: 'Courier New', Courier, monospace;
+    background-color: var(--card-bg);
+    border: 1px solid #ccc;
+    padding: 20px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #000;
+    white-space: pre-wrap; /* To respect newlines in header/footer */
+    word-break: break-all;
+}
+
+.receipt-preview-header,
+.receipt-preview-footer {
+    text-align: center;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+    min-height: 2em; /* Ensure it doesn't collapse when empty */
+}
+
+.receipt-preview-header { border-bottom: 1px dashed #000; }
+.receipt-preview-footer { border-top: 1px dashed #000; padding-top: 10px; margin-top: 10px; }
+.receipt-preview-body { font-style: italic; color: #666; text-align: center; padding: 10px 0; }
+
+/* Theme Selector */
+.theme-selector { display: flex; gap: 1.5rem; margin-top: 1rem; }
+
+.theme-option {
+    border: 3px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    cursor: pointer;
+    flex: 1;
+    transition: border-color 0.2s ease;
+    background-color: var(--light-color);
+}
+
+.theme-option.active { border-color: var(--primary-color); }
+.theme-option .theme-name { font-weight: 600; margin-bottom: 0.5rem; display: block; }
+.theme-preview { display: flex; gap: 5px; height: 50px; border-radius: 4px; overflow: hidden; border: 1px solid var(--border-color); }
+.theme-preview-main { flex: 3; }
+.theme-preview-sidebar { flex: 1; }
+
+/* Theme Previews */
+.theme-option[data-theme="light"] .theme-preview-main { background-color: #e9ecef; }
+.theme-option[data-theme="light"] .theme-preview-sidebar { background-color: #ffffff; }
+.theme-option[data-theme="dark"] { background-color: #282b30; color: #e0e0e0; }
+.theme-option[data-theme="dark"] .theme-preview-main { background-color: #1e2124; }
+.theme-option[data-theme="dark"] .theme-preview-sidebar { background-color: #282b30; }

@@ -7,38 +7,18 @@ const SQLiteStore = require('connect-sqlite3')(session);
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const WebSocket = require('ws');
-const db = require('./data-access.js');
-
+const dbPromise = require('./data-access.js');
 const app = express();
 const PORT = 3000;
 const saltRounds = 10;
-
-// Create HTTP server to attach WebSocket server to
-const server = app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+// Rate limiter for authentication routes
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // Limit each IP to 10 requests per windowMs
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many login attempts from this IP, please try again after 15 minutes' }
 });
-
-// WebSocket server setup
-const wss = new WebSocket.Server({ server });
-
-wss.on('connection', ws => {
-    console.log('Client connected');
-    ws.on('close', () => console.log('Client disconnected'));
-});
-
-function broadcast(data) {
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify(data));
-        }
-    });
-}
-
-// --- Helper Functions ---
-async function logAdminAction(userId, actionType, details = '') {
-    await db.log.create(userId, actionType, details);
-    broadcast({ type: 'LOGS_UPDATED' });
-}
 
 // --- Security Middleware ---
 app.use(helmet({
@@ -52,14 +32,6 @@ app.use(helmet({
     }
 })); // Set security-related HTTP headers
 
-// Rate limiter for authentication routes
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 10, // Limit each IP to 10 requests per windowMs
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too many login attempts from this IP, please try again after 15 minutes' }
-});
 
 // Middleware
 app.use(express.json()); // To parse JSON bodies
@@ -94,10 +66,40 @@ app.use(session({
 
 app.use(express.static(path.join(__dirname, 'public'))); // Serve static files from 'public'
 
-// --- API Endpoints ---
+async function main() {
+    const db = await dbPromise;
+    // Create HTTP server to attach WebSocket server to
+    const server = app.listen(PORT, () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+    });
 
-// PRODUCTS API
-// GET all products
+    // WebSocket server setup
+    const wss = new WebSocket.Server({ server });
+
+    wss.on('connection', ws => {
+        console.log('Client connected');
+        ws.on('close', () => console.log('Client disconnected'));
+    });
+
+    function broadcast(data) {
+        wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify(data));
+            }
+        });
+    }
+
+    // --- Helper Functions ---
+    async function logAdminAction(userId, actionType, details = '') {
+        await db.log.create(userId, actionType, details);
+        broadcast({ type: 'LOGS_UPDATED' });
+    }
+
+    // --- API Endpoints ---
+
+    // PRODUCTS API
+    // PRODUCTS API
+    // GET all products
 app.get('/api/products', async (req, res, next) => {
     try {
         const rows = await db.product.getAll();
@@ -194,7 +196,7 @@ app.post('/api/products/:id/adjust-stock', isAuthenticated, isAdmin, async (req,
 // SALES API
 // POST a new sale
 app.post('/api/sales', isAuthenticated, async (req, res, next) => {
-    const { total_amount, items, payment_method, customer_name } = req.body;
+    const { total_amount, items, payment_method, customer_name, cash_tendered, change_due } = req.body;
     const userId = req.session.user.id;
 
     // Basic validation
@@ -214,7 +216,7 @@ app.post('/api/sales', isAuthenticated, async (req, res, next) => {
             }
         }
 
-        const saleId = await db.sale.create(userId, total_amount, items, payment_method, customer_name);
+        const saleId = await db.sale.create(userId, total_amount, items, payment_method, customer_name, cash_tendered, change_due);
 
         broadcast({ type: 'PRODUCTS_UPDATED' }); // Stock levels changed
         broadcast({ type: 'SALES_UPDATED' });
@@ -378,6 +380,8 @@ app.get('/api/sales/:id', isAuthenticated, async (req, res, next) => {
             total_amount: rows[0].total_amount,
             sale_date: rows[0].sale_date,
             payment_method: rows[0].payment_method,
+            cash_tendered: rows[0].cash_tendered,
+            change_due: rows[0].change_due,
             customer_name: rows[0].customer_name,
             cashier_name: rows[0].cashier_name || 'N/A',
             items: rows.map(r => ({ product_name: r.product_name, quantity: r.quantity, price_at_sale: r.price_at_sale }))
@@ -385,6 +389,38 @@ app.get('/api/sales/:id', isAuthenticated, async (req, res, next) => {
 
         res.json({ message: "success", data: saleDetails });
 
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- SETTINGS API ---
+// GET all settings
+app.get('/api/settings', isAuthenticated, async (req, res, next) => {
+    try {
+        const rows = await db.settings.getAll();
+        // Convert array of {key, value} to a single object {key1: value1, key2: value2}
+        const settings = rows.reduce((acc, row) => {
+            acc[row.key] = row.value;
+            return acc;
+        }, {});
+        res.json({ message: "success", data: settings });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// UPDATE settings
+app.put('/api/settings', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const settingsToUpdate = req.body;
+        if (Object.keys(settingsToUpdate).length === 0) {
+            return res.status(400).json({ error: 'No settings provided to update.' });
+        }
+        await db.settings.update(settingsToUpdate);
+        logAdminAction(req.session.user.id, 'UPDATE_SETTINGS', `Updated system settings.`);
+        broadcast({ type: 'SETTINGS_UPDATED' });
+        res.json({ message: "Settings updated successfully." });
     } catch (err) {
         next(err);
     }
@@ -557,6 +593,7 @@ function isAdmin(req, res, next) {
 }
 
 // --- Central Error Handler ---
+// --- Central Error Handler ---
 app.use((err, req, res, next) => {
     console.error(err.stack);
 
@@ -572,6 +609,7 @@ app.use((err, req, res, next) => {
     });
 });
 
+// --- Page Routing ---
 // --- Page Routing ---
 
 // Main POS page
@@ -597,6 +635,10 @@ app.get('/admin-logs', isAuthenticated, isAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin-logs.html'));
 });
 
+app.get('/customization', isAuthenticated, isAdmin, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'customization.html'));
+});
+
 // Receipt page
 app.get('/receipt/:id', isAuthenticated, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'receipt.html'));
@@ -616,4 +658,11 @@ app.get('/admin-register', (req, res) => {
     // This page should only be accessible if no admin exists.
     // The frontend JS will handle the redirect logic, but we can serve the file.
     res.sendFile(path.join(__dirname, 'public', 'admin-register.html'));
+});
+
+}
+
+main().catch(err => {
+    console.error("Failed to start server:", err);
+    process.exit(1);
 });

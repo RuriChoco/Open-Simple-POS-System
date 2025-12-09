@@ -1,5 +1,14 @@
+function formatPrice(number) {
+    return Number(number).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+    const receiptHeader = document.getElementById('receipt-header');
     const receiptDetails = document.getElementById('receipt-details');
+    const receiptFooter = document.getElementById('receipt-footer');
     const saleId = window.location.pathname.split('/').pop();
 
     if (!saleId) {
@@ -8,15 +17,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     try {
-        const response = await fetch(`/api/sales/${saleId}`);
-        if (!response.ok) {
+        // Fetch both sale data and settings data concurrently
+        const [saleResponse, settingsResponse] = await Promise.all([
+            fetch(`/api/sales/${saleId}`),
+            fetch('/api/settings')
+        ]);
+
+        if (!saleResponse.ok) {
             throw new Error('Failed to fetch receipt data.');
         }
-        const { data } = await response.json();
+        if (!settingsResponse.ok) {
+            // Don't fail completely, just log it. The receipt can render with defaults.
+            console.error('Failed to fetch settings data.');
+        }
 
-        renderReceipt(data);
+        const { data: saleData } = await saleResponse.json();
+        const { data: settingsData } = settingsResponse.ok ? await settingsResponse.json() : {};
 
-        // Automatically trigger print dialog
+        renderReceipt(saleData, settingsData);
+
         window.print();
 
     } catch (error) {
@@ -25,34 +44,70 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-function renderReceipt(sale) {
+/*
+    NOTE: For this to work, your /public/receipt.html should have the following structure:
+
+    <head>
+        ...
+        <link rel="stylesheet" href="/css/receipt.css">
+    </head>
+    <body>
+        <div class="receipt-container">
+            <div id="receipt-header"></div>
+            <main id="receipt-details"></main>
+            <div id="receipt-footer"></div>
+        </div>
+        <script src="/js/receipt.js"></script>
+    </body>
+*/
+function renderReceipt(sale, settings = {}) {
+    const receiptHeader = document.getElementById('receipt-header');
     const receiptDetails = document.getElementById('receipt-details');
+    const receiptFooter = document.getElementById('receipt-footer');
+
+    if (receiptHeader) {
+        receiptHeader.innerHTML = `
+            <div class="business-info">
+                <p class="receipt-header">${settings.receipt_header || 'Your Business Name'}</p>
+                <p>${settings.business_address || ''}</p>
+                <p>${settings.business_phone || ''}</p>
+                <p>TIN: ${settings.business_tin || ''}</p>
+            </div>
+        `;
+    }
 
     const saleDate = new Date(sale.sale_date).toLocaleString();
     const customerName = sale.customer_name || 'Walk-in Customer';
     const paymentMethod = sale.payment_method ? sale.payment_method.charAt(0).toUpperCase() + sale.payment_method.slice(1) : 'N/A';
     
     let itemsHtml = '';
+    let subtotal = 0;
+    sale.items.forEach(item => {
+        subtotal += item.price_at_sale * item.quantity;
+    });
+    const taxRate = parseFloat(settings.tax_rate || '0');
+    const taxAmount = subtotal * (taxRate / 100);
+
     sale.items.forEach(item => {
         itemsHtml += `
             <tr>
                 <td>
-                    ${item.product_name}<br>
-                    <small>${item.quantity} x @ ${(item.price_at_sale).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</small>
+                    <div class="item-name-line">${item.product_name}</div>
+                    <div class="item-details-line">${item.quantity} x @ ${formatPrice(item.price_at_sale)}</div>
                 </td>
-                <td class="price-col">₱${(item.price_at_sale * item.quantity).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                <td class="price-col">₱${formatPrice(item.price_at_sale * item.quantity)}</td>
             </tr>
         `;
     });
 
     receiptDetails.innerHTML = `
         <div class="receipt-info">
-            <p><strong>OR #:</strong> ${sale.sale_id}</p>
-            <p><strong>Cashier:</strong> ${sale.cashier_name}</p>
-            <p><strong>Customer:</strong> ${customerName}</p>
-            <p><strong>Date:</strong> ${saleDate}</p>
+            <p><strong>OR #:</strong> <span>${sale.sale_id}</span></p>
+            <p><strong>Cashier:</strong> <span>${sale.cashier_name}</span></p>
+            <p><strong>Customer:</strong> <span>${customerName}</span></p>
+            <p><strong>Date:</strong> <span>${saleDate}</span></p>
         </div>
-        <table>
+        <table class="receipt-items-table">
             <thead>
                 <tr>
                     <th>Item</th>
@@ -64,10 +119,21 @@ function renderReceipt(sale) {
             </tbody>
         </table>
         <div class="summary-section">
-            <p><span>Total:</span> <strong>₱${(sale.total_amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></p>
+            <p class="summary-item"><span>Subtotal:</span> <span>₱${formatPrice(subtotal)}</span></p>
+            <p class="summary-item"><span>Tax (${taxRate}%):</span> <span>₱${formatPrice(taxAmount)}</span></p>
+            <p class="summary-total"><span>Total:</span> <span>₱${formatPrice(sale.total_amount)}</span></p>
         </div>
         <div class="payment-details-section">
-             <p><small>Paid via: ${paymentMethod}</small></p>
+             <p><span>Paid via:</span> <span>${paymentMethod}</span></p>
+             ${sale.payment_method === 'cash' && sale.cash_tendered ? `
+                <p><span>Cash Tendered:</span> <span>₱${formatPrice(sale.cash_tendered)}</span></p>
+                <p><span>Change:</span> <span>₱${formatPrice(sale.change_due)}</span></p>
+             ` : ''}
         </div>
     `;
+
+    if (receiptFooter) {
+        receiptFooter.classList.add('receipt-footer'); // Ensure styles are applied
+        receiptFooter.textContent = settings.receipt_footer || 'Thank you for your purchase!';
+    }
 }

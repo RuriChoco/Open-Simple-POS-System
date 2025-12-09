@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customization - POS System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/admin.css">
+    <link rel="stylesheet" href="/css/customization.css">
+</head>
+<body>
+    <header>
+        <h1>System Customization</h1>
+        <nav class="admin-nav">
+            <a href="/admin">Back to Dashboard</a>
+            <div class="connection-status">
+                <div id="status-indicator" class="status-indicator"></div>
+                <span id="status-text">Connecting...</span>
+            </div>
+            <div class="user-menu">
+                <span id="welcome-user"></span>
+                <a href="#" id="logout-btn" title="Logout">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-box-arrow-right" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0z"/>
+                        <path fill-rule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708z"/>
+                    </svg>
+                </a>
+            </div>
+            <div class="header-actions">
+                <button id="save-changes-btn" class="action-btn">Save Changes</button>
+            </div>
+        </nav>
+    </header>
+    <main>
+        <div id="message-box" class="message" style="display: none; margin-bottom: 1.5rem;"></div>
+
+        <form id="customization-form">
+            <div class="customization-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Receipt</h2>
+                    </div>
+                    <div class="form-group">
+                        <label for="receipt_header">Receipt Header</label>
+                        <textarea id="receipt_header" name="receipt_header" rows="4" placeholder="e.g., Your Business Name&#10;123 Main St, Anytown"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="receipt_footer">Receipt Footer</label>
+                        <textarea id="receipt_footer" name="receipt_footer" rows="4" placeholder="e.g., Thank you for your purchase!"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="business_address">Business Address</label>
+                        <textarea id="business_address" name="business_address" rows="2" placeholder="e.g., 123 Main St, Anytown"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="business_phone">Business Phone</label>
+                        <input type="text" id="business_phone" name="business_phone" placeholder="e.g., (555) 123-4567">
+                    </div>
+                    <div class="form-group">
+                        <label for="business_tin">Tax ID Number (TIN)</label>
+                        <input type="text" id="business_tin" name="business_tin" placeholder="e.g., 000-000-000-000">
+                    </div>
+                    <div class="form-group">
+                        <label for="tax_rate">Tax Rate (%)</label>
+                        <input type="number" id="tax_rate" name="tax_rate" min="0" max="100" step="0.01" placeholder="e.g., 12 for 12%">
+                    </div>
+                    <div class="receipt-preview-container">
+                        <h3>Live Preview</h3>
+                        <div class="receipt-preview">
+                            <div id="preview-header" class="receipt-preview-header">Your Business Name</div>
+                            <div class="receipt-preview-body">
+                                Item 1 ..... ₱100.00<br>
+                                Item 2 ..... ₱50.00
+                            </div>
+                            <div id="preview-footer" class="receipt-preview-footer">Thank you!</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>POS Interface Theme</h2>
+                    </div>
+                    <input type="hidden" id="pos_theme" name="pos_theme" value="light">
+                    <div class="theme-selector">
+                        <div class="theme-option active" data-theme="light">
+                            <span class="theme-name">Light Mode</span>
+                            <div class="theme-preview"><div class="theme-preview-main"></div><div class="theme-preview-sidebar"></div></div>
+                        </div>
+                        <div class="theme-option" data-theme="dark">
+                            <span class="theme-name">Dark Mode</span>
+                            <div class="theme-preview"><div class="theme-preview-main"></div><div class="theme-preview-sidebar"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </main>
+    <script src="/js/admin-helpers.js"></script>
+    <script src="/js/customization.js"></script>
+</body>
+</html>

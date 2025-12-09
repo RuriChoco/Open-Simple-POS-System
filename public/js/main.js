@@ -122,6 +122,10 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchProducts() {
         try {
             const response = await fetch('/api/products');
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to fetch products');
+            }
             const { data } = await response.json();
             allProducts = data;
             displayProducts(allProducts);
@@ -268,51 +272,63 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function renderReceiptForPrinting(saleId, saleData) {
+    function renderReceiptForPrinting(saleId, saleData, settings = {}) {
         const saleDate = new Date().toLocaleString();
         const cashierName = saleData.cashier_name || welcomeUser.textContent || 'N/A';
         const customerName = saleData.customer_name || 'Walk-in Customer';
 
+        const receiptHeader = settings.receipt_header || 'Your Business Name';
+        const receiptFooter = settings.receipt_footer || 'Thank you for your purchase!';
+
+        const businessInfoHtml = `
+            <p class="receipt-header">${receiptHeader}</p>
+            <p>${settings.business_address || ''}</p>
+            <p>${settings.business_phone || ''}</p>
+            <p>TIN: ${settings.business_tin || ''}</p>
+        `;
         // Enhanced item list
         let itemsHtml = '';
         saleData.items.forEach(item => {
             itemsHtml += `
                 <tr>
                     <td>
-                        ${item.name}<br>
-                        <small>${item.quantity} x @ ${formatPrice(item.price)}</small>
+                        <div class="item-name-line">${item.name}</div>
+                        <div class="item-details-line">${item.quantity} x @ ${formatPrice(item.price)}</div>
                     </td>
                     <td class="price-col">₱${formatPrice(item.price * item.quantity)}</td>
                 </tr>
             `;
         });
 
+        const taxRate = parseFloat(settings.tax_rate || '0');
+        const subtotal = saleData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const taxAmount = subtotal * (taxRate / 100);
+        const totalAmount = subtotal + taxAmount;
+
         // Payment details section
-        let paymentDetailsHtml = `<p><small>Paid via: ${saleData.payment_method.charAt(0).toUpperCase() + saleData.payment_method.slice(1)}</small></p>`;
+        let paymentDetailsHtml = `<p><span>Paid via:</span> <span>${saleData.payment_method.charAt(0).toUpperCase() + saleData.payment_method.slice(1)}</span></p>`;
         if (saleData.payment_method === 'cash') {
             const cashReceived = saleData.cash_received || 0;
             const changeDue = cashReceived > saleData.total_amount ? cashReceived - saleData.total_amount : 0;
             paymentDetailsHtml += `
-                <p><small>Cash Tendered: ₱${formatPrice(cashReceived)}</small></p>
-                <p><small>Change: ₱${formatPrice(changeDue)}</small></p>
+                <p><span>Cash Tendered:</span> <span>₱${formatPrice(cashReceived)}</span></p>
+                <p><span>Change:</span> <span>₱${formatPrice(changeDue)}</span></p>
             `;
         }
 
         printContainer.innerHTML = `
             <div class="receipt-container">
-                <header>
-                    <h1>Your Store Name</h1>
-                    <p>123 Tech Street, Silicon Valley, PH</p>
-                    <p>Contact: (123) 456-7890</p>
-                </header>
-                <main id="receipt-details">
+                <div class="business-info">
+                    ${businessInfoHtml}
+                </div>
+                <main>
                     <div class="receipt-info">
-                        <p><strong>OR #:</strong> ${saleId}</p>
-                        <p><strong>Cashier:</strong> ${cashierName}</p>
-                        <p><strong>Customer:</strong> ${customerName}</p>
-                        <p><strong>Date:</strong> ${saleDate}</p>
+                        <p><strong>OR #:</strong> <span>${saleId}</span></p>
+                        <p><strong>Cashier:</strong> <span>${cashierName}</span></p>
+                        <p><strong>Customer:</strong> <span>${customerName}</span></p>
+                        <p><strong>Date:</strong> <span>${saleDate}</span></p>
                     </div>
-                    <table>
+                    <table class="receipt-items-table">
                         <thead>
                             <tr>
                                 <th>Item</th>
@@ -324,15 +340,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         </tbody>
                     </table>
                     <div class="summary-section">
-                        <p><span>Total:</span> <strong>₱${formatPrice(saleData.total_amount)}</strong></p>
+                        <p class="summary-item"><span>Subtotal:</span> <span>₱${formatPrice(subtotal)}</span></p>
+                        <p class="summary-item"><span>Tax (${taxRate}%):</span> <span>₱${formatPrice(taxAmount)}</span></p>
+                        <p class="summary-total"><span>Total:</span> <span>₱${formatPrice(totalAmount)}</span></p>
                     </div>
                     <div class="payment-details-section">
                         ${paymentDetailsHtml}
                     </div>
                 </main>
-                <footer>
-                    <p>Thank you for your purchase!</p>
-                </footer>
+                <div class="receipt-footer">
+                    ${receiptFooter}
+                </div>
             </div>
         `;
     }
@@ -343,12 +361,25 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        // Fetch latest settings to get tax rate
+        const settingsResponse = await fetch('/api/settings');
+        const settingsData = settingsResponse.ok ? (await settingsResponse.json()).data : {};
+        const taxRate = parseFloat(settingsData.tax_rate || '0');
+
+        const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const taxAmount = subtotal * (taxRate / 100);
+        const totalAmount = subtotal + taxAmount;
+
+        const cashReceived = parseFloat(cashReceivedInput.value) || 0;
+        const changeDue = cashReceived > totalAmount ? cashReceived - totalAmount : 0;
+
         const salePayload = {
             total_amount: totalAmount,
             items: cart,
-            payment_method: paymentMethod,
-            customer_name: customerName
+            payment_method: paymentMethod, // 'cash', 'gcash', etc.
+            customer_name: customerName,
+            cash_tendered: paymentMethod === 'cash' ? cashReceived : null,
+            change_due: paymentMethod === 'cash' ? changeDue : null
         };
 
         try {
@@ -360,16 +391,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.error || 'Sale completion failed');
+                let errorMessage = errorData.error || 'Sale completion failed';
+                if (errorData.details) {
+                    errorMessage += `\n\nDetails: ${errorData.details}`;
+                }
+                throw new Error(errorMessage);
             }
             const result = await response.json();
 
-            const cashReceived = parseFloat(cashReceivedInput.value) || 0;
             // Add new data to the object for receipt printing
-            const receiptData = { ...salePayload, cash_received: cashReceived };
+            const receiptDataForPrint = { ...salePayload, cash_received: cashReceived };
+
             if (confirm(`Sale completed successfully! Print receipt?`)) {
                 // Render receipt into the hidden div and print
-                renderReceiptForPrinting(result.saleId, receiptData);
+                renderReceiptForPrinting(result.saleId, receiptDataForPrint, settingsData);
                 window.print();
                 printContainer.innerHTML = ''; // Clear after printing
             }

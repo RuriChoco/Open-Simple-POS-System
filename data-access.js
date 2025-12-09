@@ -1,9 +1,12 @@
 // data-access.js
 const util = require('util');
 const bcrypt = require('bcrypt');
-const db = require('./database.js');
+const dbPromise = require('./database.js');
 
 const saltRounds = 10;
+
+module.exports = (async () => {
+    const db = await dbPromise;
 
 // --- Promisified DB Methods ---
 const dbAsync = {
@@ -55,11 +58,11 @@ const product = {
 
 // --- Sale Logic ---
 const sale = {
-    create: async (userId, total_amount, items, paymentMethod, customerName) => {
+    create: async (userId, total_amount, items, paymentMethod, customerName, cashTendered, changeDue) => {
         await dbAsync.run('BEGIN TRANSACTION');
         try {
             const saleResult = await new Promise((resolve, reject) => {
-                db.run('INSERT INTO sales (user_id, total_amount, payment_method, customer_name) VALUES (?, ?, ?, ?)', [userId, total_amount, paymentMethod, customerName], function (err) {
+                db.run('INSERT INTO sales (user_id, total_amount, payment_method, customer_name, cash_tendered, change_due) VALUES (?, ?, ?, ?, ?, ?)', [userId, total_amount, paymentMethod, customerName, cashTendered, changeDue], function (err) {
                     if (err) reject(err);
                     else resolve(this);
                 });
@@ -134,7 +137,7 @@ const sale = {
     },
     getById: (id) => {
         const sql = `
-            SELECT s.id AS sale_id, s.total_amount, s.sale_date, s.payment_method, s.customer_name, u.username as cashier_name, si.quantity, si.price_at_sale, p.name AS product_name
+            SELECT s.id AS sale_id, s.total_amount, s.sale_date, s.payment_method, s.customer_name, s.cash_tendered, s.change_due, u.username as cashier_name, si.quantity, si.price_at_sale, p.name AS product_name
             FROM sales s
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
@@ -285,10 +288,32 @@ const reports = {
     }
 };
 
-module.exports = {
+// --- Settings Logic ---
+const settings = {
+    getAll: () => {
+        return dbAsync.all("SELECT key, value FROM settings", []);
+    },
+    update: async (settingsToUpdate) => {
+        await dbAsync.run('BEGIN TRANSACTION');
+        try {
+            const sql = 'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)';
+            for (const [key, value] of Object.entries(settingsToUpdate)) {
+                await dbAsync.run(sql, [key, value]);
+            }
+            await dbAsync.run('COMMIT');
+        } catch (err) {
+            await dbAsync.run('ROLLBACK');
+            throw err;
+        }
+    }
+};
+
+return {
     product,
     sale,
     user,
     log,
-    reports
+    reports,
+    settings
 };
+})();

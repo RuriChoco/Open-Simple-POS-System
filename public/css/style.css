@@ -633,59 +633,100 @@ button:focus-visible {
         display: block !important;
     }
 
-    /* Receipt-specific styles, adapted from receipt.css */
-    #receipt-container-print {
+    /* Apply receipt styles for printing */
+    .receipt-container {
         font-family: 'Courier New', Courier, monospace;
         color: #000;
-        padding: 10px;
+        font-size: 12px;
+        width: 100%; /* Use full printable width */
     }
 
-    #receipt-container-print header {
+    .receipt-header,
+    .receipt-footer {
         text-align: center;
-        border-bottom: 1px dashed #000;
-        margin-bottom: 10px;
-        padding-bottom: 10px;
+        white-space: pre-wrap;
     }
 
-    #receipt-container-print h1 { font-size: 1.4rem; margin: 0; color: #000; }
-    #receipt-container-print main { font-size: 0.9rem; }
-    #receipt-container-print .receipt-info { margin-bottom: 15px; }
-    #receipt-container-print .receipt-info p { margin: 2px 0; }
-    #receipt-container-print table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-    #receipt-container-print th, #receipt-container-print td { padding: 6px 0; }
-    #receipt-container-print th { text-align: left; border-bottom: 1px dashed #000; }
-    #receipt-container-print td small { color: #555; }
-    #receipt-container-print .price-col { text-align: right; }
-
-    #receipt-container-print .summary-section {
-        border-top: 1px dashed #000;
-        padding-top: 10px;
-        margin-top: 10px;
-    }
-
-    #receipt-container-print .summary-section p {
-        display: flex;
-        justify-content: space-between;
-        font-size: 1.1rem;
+    .receipt-header {
+        margin-bottom: 20px;
+        font-size: 14px;
         font-weight: bold;
     }
 
-    #receipt-container-print .payment-details-section {
-        padding-top: 5px;
+    .receipt-footer {
+        margin-top: 20px;
+        font-size: 11px;
+    }
+
+    .receipt-info {
+        margin-bottom: 15px;
+        border-top: 1px dashed #000;
+        border-bottom: 1px dashed #000;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+
+    .receipt-info p {
+        display: flex;
+        justify-content: space-between;
+        margin: 3px 0;
+    }
+
+    .receipt-items-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .receipt-items-table th,
+    .receipt-items-table td {
+        padding: 5px 0;
+    }
+
+    .receipt-items-table thead th {
+        text-align: left;
+        border-bottom: 1px dashed #000;
+        padding-bottom: 8px;
+    }
+
+    .receipt-items-table .price-col {
         text-align: right;
-        font-size: 0.9rem;
     }
 
-    #receipt-container-print .payment-details-section p {
-        margin: 2px 0;
+    .receipt-items-table tbody td {
+        vertical-align: top;
     }
 
-    #receipt-container-print footer {
-        text-align: center;
+    .receipt-items-table .item-name-line {
+        line-height: 1.4;
+    }
+
+    .receipt-items-table .item-details-line {
+        font-size: 11px;
+        color: #333;
+    }
+
+    .summary-section {
         border-top: 1px dashed #000;
         padding-top: 10px;
         margin-top: 10px;
-        font-size: 0.8rem;
+    }
+
+    .summary-section p {
+        display: flex;
+        justify-content: space-between;
+        font-size: 14px;
+        font-weight: bold;
+    }
+
+    .payment-details-section {
+        padding-top: 5px;
+        font-size: 11px;
+    }
+
+    .payment-details-section p {
+        display: flex;
+        justify-content: space-between;
+        margin: 2px 0;
     }
 }
 

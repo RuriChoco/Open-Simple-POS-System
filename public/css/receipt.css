@@ -1,78 +1,136 @@
+/* public/css/receipt.css */
 body {
+    background-color: #f0f0f0; /* Light grey for contrast when viewing in browser */
     font-family: 'Courier New', Courier, monospace;
-    color: #000;
-    background-color: #fff;
-    margin: 0;
-    padding: 20px;
+    display: flex;
+    justify-content: center;
+    padding: 2rem;
 }
 
 .receipt-container {
-    max-width: 300px;
-    margin: 0 auto;
-    border: 1px solid #ccc;
-    padding: 15px;
+    width: 320px; /* Typical thermal printer width */
+    background-color: #fff;
+    padding: 25px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    color: #000;
+    font-size: 12px;
 }
 
-header {
+.receipt-header,
+.receipt-footer {
     text-align: center;
-    border-bottom: 1px dashed #000;
-    margin-bottom: 10px;
-    padding-bottom: 10px;
+    white-space: pre-wrap; /* Respect newlines from settings */
 }
 
-header h1 {
-    margin: 0;
-    font-size: 1.4rem;
+.business-info {
+    text-align: center;
+    margin-bottom: 15px;
 }
 
-main {
-    font-size: 0.9rem;
+.business-info p {
+    margin: 2px 0;
+    font-size: 11px;
+}
+
+.receipt-header {
+    margin-bottom: 20px;
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;
+}
+
+.receipt-footer {
+    margin-top: 20px;
+    font-size: 11px;
 }
 
 .receipt-info {
     margin-bottom: 15px;
+    border-top: 1px dashed #000;
+    border-bottom: 1px dashed #000;
+    padding: 10px 0;
 }
 
 .receipt-info p {
-    margin: 2px 0;
+    display: flex;
+    justify-content: space-between;
+    margin: 3px 0;
 }
 
-table {
+.receipt-info p strong {
+    margin-right: 10px;
+}
+
+.receipt-items-table {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 15px;
 }
 
-th, td {
+.receipt-items-table th,
+.receipt-items-table td {
     padding: 5px 0;
 }
 
-th {
+.receipt-items-table thead th {
     text-align: left;
     border-bottom: 1px dashed #000;
+    padding-bottom: 8px;
 }
 
-.item-col { text-align: left; }
-.qty-col { text-align: center; }
-.price-col { text-align: right; }
-
-.total-section {
-    border-top: 1px dashed #000;
-    padding-top: 10px;
+.receipt-items-table .price-col {
     text-align: right;
-    font-size: 1.1rem;
-    font-weight: bold;
 }
 
-footer {
-    text-align: center;
+.receipt-items-table tbody td {
+    vertical-align: top;
+}
+
+.receipt-items-table .item-name-line {
+    line-height: 1.4;
+}
+
+.receipt-items-table .item-details-line {
+    font-size: 11px;
+    color: #333;
+}
+
+.summary-section {
     border-top: 1px dashed #000;
     padding-top: 10px;
     margin-top: 10px;
-    font-size: 0.8rem;
+}
+
+.summary-section p {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.summary-section .summary-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: normal;
+}
+
+.summary-section .summary-total {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.payment-details-section {
+    padding-top: 5px;
+    font-size: 11px;
+}
+
+.payment-details-section p {
+    display: flex;
+    justify-content: space-between;
+    margin: 2px 0;
 }
 
 @media print {
-    body { padding: 0; }
-    .receipt-container { border: none; margin: 0; max-width: 100%; }
+    body { background-color: #fff; padding: 0; }
+    .receipt-container { width: 100%; box-shadow: none; padding: 0; }
 }
