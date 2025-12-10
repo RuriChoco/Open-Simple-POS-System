@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const editProductPrice = document.getElementById('edit-product-price');
     const editProductBarcode = document.getElementById('edit-product-barcode');
     const editProductQuantity = document.getElementById('edit-product-quantity');
+    const duplicateProductBtn = document.getElementById('duplicate-product-btn');
 
     let allProducts = [];
 
@@ -114,25 +115,39 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Listen for custom event dispatched after products are imported
+    document.addEventListener('products-imported', () => {
+        fetchProducts();
+    });
+
     // --- Add Product ---
     addProductForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const formData = new FormData(addProductForm);
-        const productData = Object.fromEntries(formData.entries());
+        // Manually gather form data by ID, as inputs lack 'name' attributes
+        const productData = {
+            name: document.getElementById('product-name').value,
+            price: parseFloat(document.getElementById('product-price').value),
+            barcode: document.getElementById('product-barcode').value,
+            quantity: parseInt(document.getElementById('product-quantity').value, 10)
+        };
 
         try {
             const response = await fetch('/api/products', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(productData),
+                // Ensure barcode is not an empty string, but null if not provided
+                body: JSON.stringify({
+                    ...productData,
+                    barcode: productData.barcode || null
+                }),
             });
 
             if (!response.ok) {
                 const { error } = await response.json();
                 throw new Error(error || 'Failed to add product');
             }
-
-            addProductForm.reset();
+            // Dispatch custom event to clear the form and barcode preview via inline script
+            addProductForm.dispatchEvent(new Event('product-added-successfully'));
             fetchProducts(); // Refresh the list
         } catch (error) {
             console.error('Error adding product:', error);
@@ -157,6 +172,12 @@ document.addEventListener('DOMContentLoaded', () => {
         editProductPrice.value = product.price;
         editProductBarcode.value = product.barcode || '';
         editProductQuantity.value = product.quantity;
+
+        // Render the barcode preview in the edit modal
+        // This connects to the inline script in manage-products.html
+        const editBarcodeSvg = document.getElementById('barcode-svg-edit');
+        const editPrintBtn = document.getElementById('print-barcode-btn-edit');
+        window.renderBarcode(editBarcodeSvg, editBarcodeSvg.parentElement, product.barcode, editPrintBtn);
         modalOverlay.style.display = 'flex';
         editProductName.focus();
     }
@@ -178,20 +199,23 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!productId) return;
 
             const product = allProducts.find(p => p.id == productId);
-            if (confirm(`Are you sure you want to delete "${product.name}"? This action cannot be undone.`)) {
-                try {
-                    const response = await fetch(`/api/products/${productId}`, {
-                        method: 'DELETE'
-                    });
-
-                    if (!response.ok) {
-                        const { error } = await response.json();
-                        throw new Error(error || 'Failed to delete product');
+            if (product) {
+                // Use the new confirmation modal
+                window.showConfirmationModal({
+                    message: `Are you sure you want to permanently delete <strong>${product.name}</strong>? This action cannot be undone.`,
+                    onConfirm: async () => {
+                        try {
+                            const response = await fetch(`/api/products/${productId}`, { method: 'DELETE' });
+                            if (!response.ok) {
+                                const { error } = await response.json();
+                                throw new Error(error || 'Failed to delete product');
+                            }
+                            fetchProducts(); // Refresh the list
+                        } catch (error) {
+                            alert(`Error: ${error.message}`);
+                        }
                     }
-                    fetchProducts(); // Refresh the list
-                } catch (error) {
-                    alert(`Error: ${error.message}`);
-                }
+                });
             }
         }
     });
@@ -231,6 +255,37 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error updating product:', error);
             alert(`Error: ${error.message}`);
         }
+    });
+
+    duplicateProductBtn.addEventListener('click', () => {
+        // Get data from the edit form
+        const nameToCopy = editProductName.value;
+        const priceToCopy = editProductPrice.value;
+
+        // Close the edit modal
+        closeEditModal();
+
+        // Populate the "Add New Product" form
+        const addProductName = document.getElementById('product-name');
+        const addProductPrice = document.getElementById('product-price');
+        const addProductBarcode = document.getElementById('product-barcode');
+        const addProductQuantity = document.getElementById('product-quantity');
+
+        addProductName.value = `${nameToCopy} (Copy)`;
+        addProductPrice.value = priceToCopy;
+        addProductBarcode.value = ''; // Clear barcode for the new item
+        addProductQuantity.value = 0; // Reset stock for the new item
+
+        // Clear the barcode preview in the "Add" form
+        const addBarcodeSvg = document.getElementById('barcode-svg-add');
+        const addPrintBtn = document.getElementById('print-barcode-btn-add');
+        if (window.renderBarcode) {
+            window.renderBarcode(addBarcodeSvg, addBarcodeSvg.parentElement, '', addPrintBtn);
+        }
+
+        // Focus on the new product name for immediate editing
+        addProductName.focus();
+        addProductName.select();
     });
 
     // --- Stock Adjustment ---

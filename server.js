@@ -7,6 +7,7 @@ const SQLiteStore = require('connect-sqlite3')(session);
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const WebSocket = require('ws');
+const multer = require('multer');
 const dbPromise = require('./data-access.js');
 const app = express();
 const PORT = 3000;
@@ -19,6 +20,17 @@ const authLimiter = rateLimit({
     legacyHeaders: false,
     message: { error: 'Too many login attempts from this IP, please try again after 15 minutes' }
 });
+
+// Multer setup for file uploads (for database restore)
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, './'); // Save uploaded db in the root directory
+    },
+    filename: function (req, file, cb) {
+        cb(null, 'pos_restore_temp.db'); // Use a temporary name
+    }
+});
+const upload = multer({ storage: storage });
 
 // --- Security Middleware ---
 app.use(helmet({
@@ -109,6 +121,16 @@ app.get('/api/products', async (req, res, next) => {
     }
 });
 
+// GET all products for export (no pagination)
+app.get('/api/products/export-csv', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const rows = await db.product.getAll(); // getAll already fetches all products
+        res.json({ "message": "success", "data": rows });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // POST a new product
 app.post('/api/products', isAuthenticated, isAdmin, async (req, res, next) => {
     try {
@@ -121,6 +143,24 @@ app.post('/api/products', isAuthenticated, isAdmin, async (req, res, next) => {
         next(err);
     }
 });
+
+// POST bulk import products from CSV
+app.post('/api/products/import-csv', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const { csvData } = req.body;
+        if (!csvData) {
+            return res.status(400).json({ error: "No CSV data provided." });
+        }
+
+        const importResult = await db.product.bulkCreate(csvData, req.session.user.id);
+        logAdminAction(req.session.user.id, 'BULK_IMPORT_PRODUCTS', `Imported ${importResult.importedCount} products, ${importResult.failedCount} failed.`);
+        broadcast({ type: 'PRODUCTS_UPDATED' });
+        res.json({ message: `Successfully imported ${importResult.importedCount} products. ${importResult.failedCount} products failed to import.`, details: importResult.errors });
+    } catch (err) {
+        next(err);
+    }
+});
+
 
 // DELETE a product
 app.delete('/api/products/:id', isAuthenticated, isAdmin, async (req, res, next) => {
@@ -196,7 +236,7 @@ app.post('/api/products/:id/adjust-stock', isAuthenticated, isAdmin, async (req,
 // SALES API
 // POST a new sale
 app.post('/api/sales', isAuthenticated, async (req, res, next) => {
-    const { total_amount, items, payment_method, customer_name, cash_tendered, change_due } = req.body;
+    const { total_amount, items, payment_method, customer_name, cash_tendered, change_due, reference_number } = req.body;
     const userId = req.session.user.id;
 
     // Basic validation
@@ -216,7 +256,7 @@ app.post('/api/sales', isAuthenticated, async (req, res, next) => {
             }
         }
 
-        const saleId = await db.sale.create(userId, total_amount, items, payment_method, customer_name, cash_tendered, change_due);
+        const saleId = await db.sale.create(userId, total_amount, items, payment_method, customer_name, cash_tendered, change_due, reference_number);
 
         broadcast({ type: 'PRODUCTS_UPDATED' }); // Stock levels changed
         broadcast({ type: 'SALES_UPDATED' });
@@ -382,6 +422,7 @@ app.get('/api/sales/:id', isAuthenticated, async (req, res, next) => {
             payment_method: rows[0].payment_method,
             cash_tendered: rows[0].cash_tendered,
             change_due: rows[0].change_due,
+            reference_number: rows[0].reference_number,
             customer_name: rows[0].customer_name,
             cashier_name: rows[0].cashier_name || 'N/A',
             items: rows.map(r => ({ product_name: r.product_name, quantity: r.quantity, price_at_sale: r.price_at_sale }))
@@ -444,11 +485,24 @@ app.post('/api/users/register-admin', async (req, res, next) => {
         const row = await db.user.checkAdminExists();
         if (row) return res.status(403).json({ error: "An admin account already exists." });
 
-        const { username, password } = req.body;
-        if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
+        const { username, password, password_confirmation } = req.body;
+        if (!username || !password || !password_confirmation) {
+            return res.status(400).json({ error: "Username, password, and password confirmation are required." });
+        }
+        if (password.length < 8) { // Server-side validation for password length
+            return res.status(400).json({ error: "Password must be at least 8 characters long." });
+        }
+        if (password !== password_confirmation) {
+            return res.status(400).json({ error: "Passwords do not match." });
+        }
 
         await db.user.registerAdmin({ username, password });
-        res.status(201).json({ message: "Admin account created successfully." });
+        
+        // After successful registration, fetch the newly created user to set session
+        const newUser = await db.user.findByUsername(username);
+        req.session.user = { id: newUser.id, username: newUser.username, role: newUser.role };
+        
+        res.status(201).json({ message: "Admin account created successfully.", user: req.session.user });
     } catch (err) {
         next(err);
     }
@@ -457,11 +511,14 @@ app.post('/api/users/register-admin', async (req, res, next) => {
 // Create a new user (admin only)
 app.post('/api/users', isAuthenticated, isAdmin, async (req, res, next) => {
     try {
-        const { username, password, role } = req.body;
-        if (!username || !password || !role) return res.status(400).json({ error: "Username, password, and role are required." });
+        const { username, password, role, password_confirmation } = req.body;
+        if (!username || !password || !role || !password_confirmation) return res.status(400).json({ error: "Username, password, password confirmation, and role are required." });
         if (!['admin', 'cashier'].includes(role)) return res.status(400).json({ error: "Invalid role specified." });
         if (password.length < 8) {
             return res.status(400).json({ error: "Password must be at least 8 characters long." });
+        }
+        if (password !== password_confirmation) {
+            return res.status(400).json({ error: "Passwords do not match." });
         }
 
         await db.user.create({ username, password, role });
@@ -534,6 +591,38 @@ app.get('/api/logs/admin-actions', isAuthenticated, isAdmin, async (req, res, ne
     }
 });
 
+// DELETE a user (admin only)
+app.delete('/api/users/:id', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const userIdToDelete = parseInt(req.params.id, 10);
+        const currentUserId = req.session.user.id;
+
+        if (userIdToDelete === currentUserId) {
+            return res.status(403).json({ error: "You cannot delete your own account." });
+        }
+
+        const userToDelete = await db.user.findById(userIdToDelete);
+        if (!userToDelete) {
+            return res.status(404).json({ error: "User not found." });
+        }
+
+        // Prevent deleting the last admin
+        if (userToDelete.role === 'admin') {
+            const adminCountResult = await db.user.countAdmins();
+            if (adminCountResult && adminCountResult.count <= 1) {
+                return res.status(403).json({ error: "Cannot delete the last admin account." });
+            }
+        }
+
+        const result = await db.user.deleteById(userIdToDelete);
+        logAdminAction(req.session.user.id, 'DELETE_USER', `Deleted user ID ${userIdToDelete} (${userToDelete.username}).`);
+        broadcast({ type: 'USERS_UPDATED' });
+        res.json({ message: "User deleted successfully.", changes: result.changes });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // UPDATE a user's role (admin only)
 app.put('/api/users/:id/role', isAuthenticated, isAdmin, async (req, res, next) => {
     try {
@@ -566,6 +655,71 @@ app.put('/api/users/:id/role', isAuthenticated, isAdmin, async (req, res, next) 
     } catch (err) {
         next(err);
     }
+});
+
+// UPDATE a user's password (admin only)
+app.put('/api/users/:id/password', isAuthenticated, isAdmin, async (req, res, next) => {
+    try {
+        const userIdToUpdate = parseInt(req.params.id, 10);
+        const currentUserId = req.session.user.id;
+        const { newPassword, newPasswordConfirmation } = req.body;
+
+        if (!newPassword || !newPasswordConfirmation) {
+            return res.status(400).json({ error: "New password and confirmation are required." });
+        }
+        if (newPassword.length < 8) {
+            return res.status(400).json({ error: "Password must be at least 8 characters long." });
+        }
+        if (newPassword !== newPasswordConfirmation) {
+            return res.status(400).json({ error: "New passwords do not match." });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+        const result = await db.user.updatePassword(userIdToUpdate, hashedPassword);
+
+        if (result.changes === 0) {
+            return res.status(404).json({ error: "User not found." });
+        }
+
+        logAdminAction(req.session.user.id, 'UPDATE_USER_PASSWORD', `Changed password for user ID ${userIdToUpdate}.`);
+        broadcast({ type: 'USERS_UPDATED' }); // Notify clients that user data might have changed
+        res.json({ message: "User password updated successfully." });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- DATABASE BACKUP/RESTORE API ---
+
+// GET database backup
+app.get('/api/database/backup', isAuthenticated, isAdmin, (req, res) => {
+    const dbPath = path.join(__dirname, 'pos.db');
+    res.download(dbPath, `pos-backup-${new Date().toISOString().slice(0,10)}.db`, (err) => {
+        if (err) {
+            console.error("Backup download error:", err);
+            res.status(500).send("Could not download the database backup.");
+        }
+    });
+});
+
+// POST database restore
+app.post('/api/database/restore', isAuthenticated, isAdmin, upload.single('dbfile'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No database file was uploaded.' });
+    }
+
+    // Important: This is a simple overwrite. In a real-world scenario, you'd want to
+    // close the current DB connection, replace the file, and then restart the app.
+    // For this system, we'll just log it and tell the user to restart.
+    const fs = require('fs');
+    fs.renameSync(req.file.path, path.join(__dirname, 'pos.db'));
+
+    // Trigger nodemon to restart the server by touching server.js
+    // This ensures the new pos.db file is loaded on restart.
+    const serverFilePath = path.join(__dirname, 'server.js');
+    fs.utimesSync(serverFilePath, new Date(), new Date());
+    
+    res.json({ message: "Database restored successfully. The server is restarting automatically to apply changes." });
 });
 
 // --- Auth Middleware ---

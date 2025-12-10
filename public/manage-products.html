@@ -9,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css">
     <link rel="stylesheet" href="/css/admin.css">
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 </head>
 <body>
     <header>
@@ -36,7 +37,9 @@
                 <div class="card">
                     <div class="card-header">
                         <h2>All Products</h2>
-                        <input type="search" id="product-search" placeholder="Search products...">
+                        <div class="input-with-button">
+                            <input type="search" id="product-search" placeholder="Search products or scan barcode...">
+                        </div>
                     </div>
                     <div id="product-management-list"></div>
                 </div>
@@ -45,13 +48,56 @@
                 <div class="card">
                     <h2>Add New Product</h2>
                     <form id="add-product-form">
-                        <input type="text" id="product-name" placeholder="Product Name" required>
-                        <input type="number" id="product-price" placeholder="Price" step="0.01" required>
-                        <input type="text" id="product-barcode" placeholder="Barcode (optional)">
-                        <input type="number" id="product-quantity" placeholder="Initial Stock" min="0" value="0" required>
+                        <div class="form-group">
+                            <label for="product-name">Product Name</label>
+                            <input type="text" id="product-name" placeholder="Product Name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="product-price">Price</label>
+                            <input type="number" id="product-price" placeholder="Price" step="0.01" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="product-barcode">Barcode</label>
+                            <div class="input-with-button">
+                                <input type="text" id="product-barcode" placeholder="Scan or generate a barcode">
+                                <button type="button" id="generate-barcode-btn-add" class="btn">Generate</button>
+                            </div>
+                            <div class="barcode-display-container" style="display: none;">
+                                <svg id="barcode-svg-add"></svg>
+                            </div>
+                            <div class="form-group-actions">
+                                <button type="button" id="print-barcode-btn-add" class="btn btn-secondary" style="display: none; width: 100%;">Print Label</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="product-quantity">Initial Stock</label>
+                            <input type="number" id="product-quantity" placeholder="Initial Stock" min="0" value="0" required>
+                        </div>
                         <button type="submit" class="btn-block">Add Product</button>
                     </form>
                 </div>
+                <div class="card" style="margin-top: 2rem;">
+                    <h2>Bulk Import Products</h2>
+                    <p style="margin-bottom: 1rem; font-size: 0.9rem; color: var(--secondary-color);">
+                        Upload a CSV file with columns: <code>name,price,barcode,quantity</code>. Barcode is optional.
+                    </p>
+                    <input type="file" id="csv-file-input" accept=".csv" style="margin-bottom: 1rem;">
+                    <button type="button" id="import-csv-btn" class="btn-block">Import CSV</button>
+                    <div id="import-message-box" class="message" style="display: none; margin-top: 1rem;"></div>
+                    <button type="button" id="export-products-csv-btn" class="btn-block btn-secondary" style="margin-top: 1rem;">Export All Products to CSV</button>
+                </div>
+                <div class="card" style="margin-top: 2rem;">
+                    <h2>Database Management</h2>
+                    <p style="margin-bottom: 1rem; font-size: 0.9rem; color: var(--secondary-color);">
+                        Backup or restore the entire application database.
+                    </p>
+                    <button type="button" id="backup-db-btn" class="btn-block btn-secondary">Backup Database</button>
+                    <hr style="margin: 1.5rem 0;">
+                    <label for="restore-db-input">Restore Database (.db file)</label>
+                    <input type="file" id="restore-db-input" accept=".db" style="margin-bottom: 1rem;">
+                    <button type="button" id="restore-db-btn" class="btn-block btn-danger">Restore Database</button>
+                </div>
+
             </div>
         </div>
     </main>
@@ -73,13 +119,25 @@
                 </div>
                 <div class="form-group">
                     <label for="edit-product-barcode">Barcode</label>
-                    <input type="text" id="edit-product-barcode">
+                    <div class="input-with-button">
+                        <input type="text" id="edit-product-barcode">
+                        <button type="button" id="generate-barcode-btn-edit" class="btn">Generate</button>
+                    </div>
+                    <div class="barcode-display-container" style="display: none;">
+                        <svg id="barcode-svg-edit"></svg>
+                    </div>
+                    <div class="form-group-actions">
+                        <button type="button" id="print-barcode-btn-edit" class="btn btn-secondary" style="display: none; width: 100%;">Print Label</button>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="edit-product-quantity">Current Stock</label>
                     <input type="number" id="edit-product-quantity" min="0" required>
                 </div>
-                <button type="submit" class="btn-block">Save Changes</button>
+                <div class="action-buttons">
+                    <button type="button" id="duplicate-product-btn" class="btn btn-secondary">Duplicate</button>
+                    <button type="submit" class="btn">Save Changes</button>
+                </div>
             </form>
             <hr style="margin: 2rem 0;">
             <h3>Adjust Stock</h3>
@@ -90,7 +148,24 @@
         </div>
     </div>
 
+    <!-- Confirmation Modal -->
+    <div id="confirmation-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="max-width: 400px;">
+            <button class="modal-close-btn">&times;</button>
+            <h2 id="confirmation-title">Confirm Deletion</h2>
+            <p id="confirmation-message" style="margin: 1.5rem 0;"></p>
+            <div class="action-buttons">
+                <button id="cancel-confirmation-btn" class="btn btn-secondary">Cancel</button>
+                <button id="confirm-action-btn" class="btn btn-danger">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden container for printing barcode labels -->
+    <div id="print-barcode-label-area" class="print-only"></div>
+
     <script src="/js/admin-helpers.js"></script>
+    <script src="/js/manage-products-page-logic.js"></script>
     <script src="/js/manage-products.js"></script>
 </body>
 </html>

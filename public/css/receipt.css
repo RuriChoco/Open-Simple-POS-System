@@ -16,12 +16,6 @@ body {
     font-size: 12px;
 }
 
-.receipt-header,
-.receipt-footer {
-    text-align: center;
-    white-space: pre-wrap; /* Respect newlines from settings */
-}
-
 .business-info {
     text-align: center;
     margin-bottom: 15px;
@@ -37,11 +31,17 @@ body {
     font-size: 14px;
     font-weight: bold;
     text-align: center;
+    white-space: pre-wrap;
 }
 
 .receipt-footer {
     margin-top: 20px;
     font-size: 11px;
+    /* Force centering with !important to override any conflicting styles */
+    width: 100%;
+    display: block;
+    text-align: center !important;
+    white-space: pre-wrap;
 }
 
 .receipt-info {

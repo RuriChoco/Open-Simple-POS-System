@@ -367,18 +367,6 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchAllReports();
     });
 
-    function downloadCsv(csvString, fileName) {
-        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', fileName);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
-
     function exportDailyReportToCsv() {
         if (currentDailyReportData.length === 0) {
             alert('No data to export.');
@@ -401,7 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const fileName = `daily-sales-report_${startDateInput.value}_to_${endDateInput.value}.csv`;
-        downloadCsv(csvRows.join('\n'), fileName);
+        window.downloadCsv(csvRows.join('\n'), fileName);
     }
 
     exportCsvBtn.addEventListener('click', exportDailyReportToCsv);

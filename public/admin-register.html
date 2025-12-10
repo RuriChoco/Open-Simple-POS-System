@@ -14,12 +14,28 @@
             <p>No admin account found. Please create one to proceed.</p>
             <form id="register-form">
                 <div id="error-message" style="color: var(--danger-color); display: none; margin-bottom: 1rem;"></div>
-                <input type="text" id="username" placeholder="Admin Username" required>
-                <input type="password" id="password" placeholder="Password" required>
-                <button type="submit">Create Admin</button>
+                <div class="form-group">
+                    <label for="username">Admin Username</label>
+                    <input type="text" id="username" placeholder="Admin Username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <div class="input-with-button">
+                        <input type="password" id="password" name="password" required>
+                        <button type="button" id="toggle-password-btn" class="btn" aria-label="Show password" style="padding: 0.5rem 1rem;">Show</button>
+                    </div>
+                    <div id="password-strength" class="password-strength-indicator" style="display: none;"></div>
+                    <small class="form-text" style="font-size: 0.8rem; color: var(--secondary-color);">Password must be at least 8 characters long.</small>
+                </div>
+                <div class="form-group">
+                    <label for="password-confirmation">Confirm Password</label>
+                    <input type="password" id="password-confirmation" name="password_confirmation" required>
+                </div>
+                <button type="submit" class="btn-block">Create Admin</button>
             </form>
         </div>
     </main>
-    <script src="/js/admin-register.js" defer></script>
+    <script src="/js/password-helpers.js"></script>
+    <script src="/js/admin-register.js"></script>
 </body>
 </html>

@@ -23,9 +23,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const cashReceivedInput = document.getElementById('cash-received');
     const changeDueEl = document.getElementById('change-due');
     const exactCashBtn = document.getElementById('exact-cash-btn');
+    const referenceNumberInput = document.getElementById('reference-number');
     const cashPaymentDetails = document.getElementById('cash-payment-details');
     const confirmPaymentBtn = paymentForm.querySelector('button[type="submit"]');
 
+    const posHeaderTitleEl = document.getElementById('pos-header-title');
     let cart = [];
     let allProducts = []; // Cache all products to avoid re-fetching
 
@@ -53,6 +55,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (message.type === 'PRODUCTS_UPDATED') {
                 console.log('Products updated, refreshing list...');
                 fetchProducts();
+            }
+            if (message.type === 'SETTINGS_UPDATED') {
+                fetchSettingsAndApplyToUI(); // Refresh settings if updated
             }
         };
 
@@ -117,6 +122,20 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetch('/api/users/logout', { method: 'POST' });
         window.location.href = '/login';
     });
+
+    // --- Settings Management ---
+    async function fetchSettingsAndApplyToUI() {
+        try {
+            const response = await fetch('/api/settings');
+            if (!response.ok) throw new Error('Failed to fetch settings');
+            const { data: settings } = await response.json();
+
+            // Apply POS Header Title
+            posHeaderTitleEl.textContent = settings.pos_header_title || 'Simple POS System';
+        } catch (error) {
+            console.error('Error fetching settings:', error);
+        }
+    }
 
     // Fetch and display products
     async function fetchProducts() {
@@ -277,8 +296,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const cashierName = saleData.cashier_name || welcomeUser.textContent || 'N/A';
         const customerName = saleData.customer_name || 'Walk-in Customer';
 
-        const receiptHeader = settings.receipt_header || 'Your Business Name';
-        const receiptFooter = settings.receipt_footer || 'Thank you for your purchase!';
+        const receiptHeader = (settings.receipt_header || 'Your Business Name').trim();
+        const receiptFooter = (settings.receipt_footer || 'Thank you for your purchase!').trim();
+
+        const referenceNumber = saleData.reference_number;
+        const paymentMethodDisplay = saleData.payment_method.charAt(0).toUpperCase() + saleData.payment_method.slice(1);
 
         const businessInfoHtml = `
             <p class="receipt-header">${receiptHeader}</p>
@@ -306,7 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalAmount = subtotal + taxAmount;
 
         // Payment details section
-        let paymentDetailsHtml = `<p><span>Paid via:</span> <span>${saleData.payment_method.charAt(0).toUpperCase() + saleData.payment_method.slice(1)}</span></p>`;
+        let paymentDetailsHtml = `<p><span>Paid via:</span> <span>${paymentMethodDisplay}</span></p>`;
         if (saleData.payment_method === 'cash') {
             const cashReceived = saleData.cash_received || 0;
             const changeDue = cashReceived > saleData.total_amount ? cashReceived - saleData.total_amount : 0;
@@ -314,6 +336,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <p><span>Cash Tendered:</span> <span>₱${formatPrice(cashReceived)}</span></p>
                 <p><span>Change:</span> <span>₱${formatPrice(changeDue)}</span></p>
             `;
+        } else if (referenceNumber) {
+            paymentDetailsHtml += `
+                <p><span>Ref #:</span> <span>${referenceNumber}</span></p>`;
         }
 
         printContainer.innerHTML = `
@@ -371,6 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalAmount = subtotal + taxAmount;
 
         const cashReceived = parseFloat(cashReceivedInput.value) || 0;
+        // Note: changeDue is only relevant for cash payments, but we calculate it here for consistency.
         const changeDue = cashReceived > totalAmount ? cashReceived - totalAmount : 0;
 
         const salePayload = {
@@ -379,7 +405,8 @@ document.addEventListener('DOMContentLoaded', () => {
             payment_method: paymentMethod, // 'cash', 'gcash', etc.
             customer_name: customerName,
             cash_tendered: paymentMethod === 'cash' ? cashReceived : null,
-            change_due: paymentMethod === 'cash' ? changeDue : null
+            change_due: paymentMethod === 'cash' ? changeDue : null,
+            reference_number: paymentMethod !== 'cash' ? referenceNumberInput.value.trim() : null
         };
 
         try {
@@ -469,12 +496,16 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.payment-method-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             paymentMethodInput.value = btn.dataset.method;
+
             cashPaymentDetails.style.display = btn.dataset.method === 'cash' ? 'block' : 'none';
+            referenceNumberInput.style.display = btn.dataset.method !== 'cash' ? 'block' : 'none';
+
             // Re-evaluate button state when switching payment method
             if (btn.dataset.method !== 'cash') {
                 confirmPaymentBtn.disabled = false;
             } else {
                 cashReceivedInput.dispatchEvent(new Event('input'));
+                referenceNumberInput.value = ''; // Clear reference number when switching to cash
             }
         });
     });
@@ -684,9 +715,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Trigger input event to reset the filtered list
                 searchInput.dispatchEvent(new Event('input', { bubbles: true }));
             } else {
-                // If no barcode match, default to focusing the first visible product
-                const firstProduct = productList.querySelector('.product-item');
-                if (firstProduct) firstProduct.focus();
+                // If no barcode match, provide feedback and clear input
+                alert(`Product with barcode "${searchTerm}" not found.`); // Or a more subtle message
+                searchInput.value = ''; // Clear the invalid barcode
+                searchInput.dispatchEvent(new Event('input', { bubbles: true })); // Reset filtered list
+                searchInput.focus(); // Keep focus on search input for next scan
             }
         }
 
@@ -734,6 +767,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial load
     // setUIMode is called above
     checkSession();
+    fetchSettingsAndApplyToUI(); // Fetch and apply settings on load
+    searchInput.focus(); // Ensure search input is focused on page load
     connectWebSocket();
     fetchProducts();
     updateCart(); // Initialize cart view

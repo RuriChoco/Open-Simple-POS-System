@@ -10,18 +10,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Form inputs
     const receiptHeaderInput = document.getElementById('receipt_header');
     const receiptFooterInput = document.getElementById('receipt_footer');
-    const posThemeInput = document.getElementById('pos_theme');
     const businessAddressInput = document.getElementById('business_address');
     const businessPhoneInput = document.getElementById('business_phone');
     const businessTinInput = document.getElementById('business_tin');
     const taxRateInput = document.getElementById('tax_rate');
+    const posHeaderTitleInput = document.getElementById('pos-header-title-input');
 
     // Live preview elements
     const previewHeader = document.getElementById('preview-header');
+    const receiptFullPreview = document.querySelector('.receipt-preview'); // Select the container
+    const previewPosHeader = document.getElementById('preview-pos-header');
     const previewFooter = document.getElementById('preview-footer');
-
-    // Theme selector
-    const themeOptions = document.querySelectorAll('.theme-option');
 
     // --- WebSocket & Session Logic ---
     function connectWebSocket() {
@@ -90,43 +89,110 @@ document.addEventListener('DOMContentLoaded', () => {
             // Populate form
             receiptHeaderInput.value = data.receipt_header || '';
             receiptFooterInput.value = data.receipt_footer || '';
-            posThemeInput.value = data.pos_theme || 'light';
             businessAddressInput.value = data.business_address || '';
             businessPhoneInput.value = data.business_phone || '';
             businessTinInput.value = data.business_tin || '';
             taxRateInput.value = data.tax_rate || '0';
+            posHeaderTitleInput.value = data.pos_header_title || '';
 
             // Update UI
             updateReceiptPreview();
-            updateThemeSelection(data.pos_theme || 'light');
+            updatePosHeaderPreview();
 
         } catch (error) {
             showMessage(error.message, 'error');
         }
     }
 
+    // --- Handle POS Header Preview ---
+    function updatePosHeaderPreview() {
+        // Default to "Simple POS System" if input is empty
+        previewPosHeader.textContent = posHeaderTitleInput.value || 'Simple POS System';
+    }
+
     // --- Handle Receipt Preview ---
     function updateReceiptPreview() {
-        previewHeader.textContent = receiptHeaderInput.value || '(No Header)';
-        previewFooter.textContent = receiptFooterInput.value || '(No Footer)';
+        const headerText = receiptHeaderInput.value || 'Your Business Name';
+        const footerText = receiptFooterInput.value || 'Thank you for your purchase!';
+        const address = businessAddressInput.value || '123 Main St, Anytown';
+        const phone = businessPhoneInput.value || '(555) 123-4567';
+        const tin = businessTinInput.value || '000-000-000-000';
+        const taxRate = parseFloat(taxRateInput.value) || 0;
+
+        // Sample data for preview
+        const sampleItems = [
+            { name: 'Sample Product A', quantity: 2, price: 50.00 },
+            { name: 'Sample Product B', quantity: 1, price: 120.50 },
+            { name: 'Long Product Name That Might Wrap Around', quantity: 3, price: 15.00 }
+        ];
+        const sampleSaleId = '12345';
+        const sampleCashier = 'Admin';
+        const sampleCustomer = 'Walk-in Customer';
+        const sampleDate = new Date().toLocaleString();
+
+        let itemsHtml = '';
+        let subtotal = 0;
+        sampleItems.forEach(item => {
+            const itemTotal = item.price * item.quantity;
+            subtotal += itemTotal;
+            itemsHtml += `
+                <tr>
+                    <td>
+                        <div class="item-name-line">${item.name}</div>
+                        <div class="item-details-line">${item.quantity} x @ ${formatPrice(item.price)}</div>
+                    </td>
+                    <td class="price-col">₱${formatPrice(itemTotal)}</td>
+                </tr>
+            `;
+        });
+
+        const taxAmount = subtotal * (taxRate / 100);
+        const totalAmount = subtotal + taxAmount;
+        const cashTendered = totalAmount + 50; // Example cash tendered
+        const changeDue = cashTendered - totalAmount;
+
+        receiptFullPreview.innerHTML = `
+            <div class="business-info">
+                <p class="receipt-header">${headerText}</p>
+                <p>${address}</p>
+                <p>${phone}</p>
+                <p>TIN: ${tin}</p>
+            </div>
+            <main>
+                <div class="receipt-info">
+                    <p><strong>OR #:</strong> <span>${sampleSaleId}</span></p>
+                    <p><strong>Cashier:</strong> <span>${sampleCashier}</span></p>
+                    <p><strong>Customer:</strong> <span>${sampleCustomer}</span></p>
+                    <p><strong>Date:</strong> <span>${sampleDate}</span></p>
+                </div>
+                <table class="receipt-items-table">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th class="price-col">Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsHtml}
+                    </tbody>
+                </table>
+                <div class="summary-section">
+                    <p class="summary-item"><span>Subtotal:</span> <span>₱${formatPrice(subtotal)}</span></p>
+                    <p class="summary-item"><span>Tax (${taxRate}%):</span> <span>₱${formatPrice(taxAmount)}</span></p>
+                    <p class="summary-total"><span>Total:</span> <span>₱${formatPrice(totalAmount)}</span></p>
+                </div>
+                <div class="payment-details-section">
+                    <p><span>Cash Tendered:</span> <span>₱${formatPrice(cashTendered)}</span></p>
+                    <p><span>Change:</span> <span>₱${formatPrice(changeDue)}</span></p>
+                </div>
+            </main>
+            <div class="receipt-footer">${footerText}</div>
+        `;
     }
 
     receiptHeaderInput.addEventListener('input', updateReceiptPreview);
     receiptFooterInput.addEventListener('input', updateReceiptPreview);
-
-    // --- Handle Theme Selection ---
-    function updateThemeSelection(selectedTheme) {
-        posThemeInput.value = selectedTheme;
-        themeOptions.forEach(option => {
-            option.classList.toggle('active', option.dataset.theme === selectedTheme);
-        });
-    }
-
-    themeOptions.forEach(option => {
-        option.addEventListener('click', () => {
-            updateThemeSelection(option.dataset.theme);
-        });
-    });
+    posHeaderTitleInput.addEventListener('input', updatePosHeaderPreview);
 
     // --- Handle Form Submission ---
     async function saveChanges(e) {

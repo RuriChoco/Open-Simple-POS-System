@@ -6,13 +6,12 @@ function formatPrice(number) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const receiptHeader = document.getElementById('receipt-header');
-    const receiptDetails = document.getElementById('receipt-details');
-    const receiptFooter = document.getElementById('receipt-footer');
+    // The main container for the entire receipt.
+    const receiptContainer = document.querySelector('.receipt-container');
     const saleId = window.location.pathname.split('/').pop();
 
     if (!saleId) {
-        receiptDetails.innerHTML = '<p>Error: No Sale ID provided.</p>';
+        if (receiptContainer) receiptContainer.innerHTML = '<p>Error: No Sale ID provided.</p>';
         return;
     }
 
@@ -40,7 +39,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     } catch (error) {
         console.error(error);
-        receiptDetails.innerHTML = `<p>Error loading receipt: ${error.message}</p>`;
+        if (receiptContainer) receiptContainer.innerHTML = `<p>Error loading receipt: ${error.message}</p>`;
     }
 });
 
@@ -61,20 +60,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     </body>
 */
 function renderReceipt(sale, settings = {}) {
-    const receiptHeader = document.getElementById('receipt-header');
-    const receiptDetails = document.getElementById('receipt-details');
-    const receiptFooter = document.getElementById('receipt-footer');
-
-    if (receiptHeader) {
-        receiptHeader.innerHTML = `
-            <div class="business-info">
-                <p class="receipt-header">${settings.receipt_header || 'Your Business Name'}</p>
-                <p>${settings.business_address || ''}</p>
-                <p>${settings.business_phone || ''}</p>
-                <p>TIN: ${settings.business_tin || ''}</p>
-            </div>
-        `;
+    const receiptContainer = document.querySelector('.receipt-container');
+    if (!receiptContainer) {
+        console.error('Receipt container element not found.');
+        return;
     }
+
+    const headerText = settings.receipt_header || 'Your Business Name';
+    const footerText = settings.receipt_footer || 'Thank you for your purchase!';
+    const address = settings.business_address || '';
+    const phone = settings.business_phone || '';
+    const tin = settings.business_tin || '';
+    const taxRate = parseFloat(settings.tax_rate || '0');
 
     const saleDate = new Date(sale.sale_date).toLocaleString();
     const customerName = sale.customer_name || 'Walk-in Customer';
@@ -85,7 +82,6 @@ function renderReceipt(sale, settings = {}) {
     sale.items.forEach(item => {
         subtotal += item.price_at_sale * item.quantity;
     });
-    const taxRate = parseFloat(settings.tax_rate || '0');
     const taxAmount = subtotal * (taxRate / 100);
 
     sale.items.forEach(item => {
@@ -100,7 +96,24 @@ function renderReceipt(sale, settings = {}) {
         `;
     });
 
-    receiptDetails.innerHTML = `
+    const paymentDetailsHtml = `
+        <p><span>Paid via:</span> <span>${paymentMethod}</span></p>
+        ${sale.payment_method === 'cash' && sale.cash_tendered ? `
+           <p><span>Cash Tendered:</span> <span>₱${formatPrice(sale.cash_tendered)}</span></p>
+           <p><span>Change:</span> <span>₱${formatPrice(sale.change_due)}</span></p>
+        ` : sale.reference_number ? `
+           <p><span>Ref #:</span> <span>${sale.reference_number}</span></p>
+        ` : ''}
+    `;
+
+    receiptContainer.innerHTML = `
+        <div class="business-info">
+            <p class="receipt-header">${headerText}</p>
+            <p>${address}</p>
+            <p>${phone}</p>
+            <p>TIN: ${tin}</p>
+        </div>
+        <main>
         <div class="receipt-info">
             <p><strong>OR #:</strong> <span>${sale.sale_id}</span></p>
             <p><strong>Cashier:</strong> <span>${sale.cashier_name}</span></p>
@@ -124,16 +137,9 @@ function renderReceipt(sale, settings = {}) {
             <p class="summary-total"><span>Total:</span> <span>₱${formatPrice(sale.total_amount)}</span></p>
         </div>
         <div class="payment-details-section">
-             <p><span>Paid via:</span> <span>${paymentMethod}</span></p>
-             ${sale.payment_method === 'cash' && sale.cash_tendered ? `
-                <p><span>Cash Tendered:</span> <span>₱${formatPrice(sale.cash_tendered)}</span></p>
-                <p><span>Change:</span> <span>₱${formatPrice(sale.change_due)}</span></p>
-             ` : ''}
+            ${paymentDetailsHtml}
         </div>
+        </main>
+        <div class="receipt-footer">${footerText}</div>
     `;
-
-    if (receiptFooter) {
-        receiptFooter.classList.add('receipt-footer'); // Ensure styles are applied
-        receiptFooter.textContent = settings.receipt_footer || 'Thank you for your purchase!';
-    }
 }

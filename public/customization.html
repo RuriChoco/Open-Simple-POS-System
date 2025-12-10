@@ -82,24 +82,26 @@
 
                 <div class="card">
                     <div class="card-header">
-                        <h2>POS Interface Theme</h2>
+                        <h2>POS Interface Customization</h2>
                     </div>
-                    <input type="hidden" id="pos_theme" name="pos_theme" value="light">
-                    <div class="theme-selector">
-                        <div class="theme-option active" data-theme="light">
-                            <span class="theme-name">Light Mode</span>
-                            <div class="theme-preview"><div class="theme-preview-main"></div><div class="theme-preview-sidebar"></div></div>
-                        </div>
-                        <div class="theme-option" data-theme="dark">
-                            <span class="theme-name">Dark Mode</span>
-                            <div class="theme-preview"><div class="theme-preview-main"></div><div class="theme-preview-sidebar"></div></div>
-                        </div>
+                    <p style="margin-bottom: 1rem; font-size: 0.9rem; color: var(--secondary-color);">
+                        Customize the look and feel of the Point of Sale interface.
+                    </p>
+                    <div class="form-group">
+                        <label for="pos-header-title-input">POS Header Title</label>
+                        <input type="text" id="pos-header-title-input" name="pos_header_title" placeholder="e.g., My Store POS">
+                    </div>
+                    <div class="pos-header-preview-container">
+                        <h3>Live Preview</h3>
+                        <div id="preview-pos-header" class="pos-header-preview">Simple POS System</div>
                     </div>
                 </div>
+
             </div>
         </form>
     </main>
     <script src="/js/admin-helpers.js"></script>
+    <script src="/js/theme-manager.js"></script>
     <script src="/js/customization.js"></script>
 </body>
 </html>
