@@ -21,3 +21,10 @@ build/
 .DS_Store
 Thumbs.db
 generate_products.py
+
+#Documentation
+# Generated diagrams from scripts
+docs/
+
+#gitignore
+.gitignore
