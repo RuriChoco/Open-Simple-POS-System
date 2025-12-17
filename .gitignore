@@ -26,5 +26,21 @@ generate_products.py
 # Generated diagrams from scripts
 docs/
 
-#gitignore
-.gitignore
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Packaging
+*.sh
+*.tgz
+*.zip
+*.tar.gz
+
+#nodejs installer
+.npm/
+node-v25.2.1-x64.msi
